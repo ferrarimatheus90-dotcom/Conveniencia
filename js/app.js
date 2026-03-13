@@ -1217,7 +1217,7 @@ function exportarBackup(){
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(DB));
   const downloadAnchorNode = document.createElement('a');
   downloadAnchorNode.setAttribute("href", dataStr);
-  downloadAnchorNode.setAttribute("download", "convenienciapro_backup_" + new Date().toISOString().slice(0,10) + ".json");
+  downloadAnchorNode.setAttribute("download", "conveniencia_oliveira_backup_" + new Date().toISOString().slice(0,10) + ".json");
   document.body.appendChild(downloadAnchorNode);
   downloadAnchorNode.click();
   downloadAnchorNode.remove();
@@ -1277,7 +1277,7 @@ function imprimirCupom(venda) {
     document.body.appendChild(printFrame);
   }
 
-  const nomeLoja = "CONVENIÊNCIA PRO";
+  const nomeLoja = "CONVENIÊNCIA OLIVEIRA";
   // O usuário pode mudar aqui depois
   const cnpj = "00.000.000/0001-00"; 
   const endereco = "Endereço da Loja, 123"; 
@@ -1369,7 +1369,7 @@ function imprimirCupom(venda) {
         <div class="divider"></div>
         <div class="footer">
           <div>Volte sempre!</div>
-          <div style="font-size: 9px; margin-top: 5px;">Desenvolvido por ConveniênciaPRO</div>
+          <div style="font-size: 9px; margin-top: 5px;">Desenvolvido por Conveniência Oliveira</div>
         </div>
         <script>window.onload = function() { window.print(); }</script>
       </body>

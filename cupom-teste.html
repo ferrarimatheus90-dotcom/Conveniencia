@@ -1,13 +1,15 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8">
   <title>Teste de Cupom 80mm</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&display=swap');
-    
+
     /* Simulação visual do papel e do painel de fundo na tela (apenas para este teste web) */
-    html, body.preview-mode {
+    html,
+    body.preview-mode {
       background-color: #555;
       display: flex;
       justify-content: center;
@@ -16,10 +18,10 @@
 
     .paper {
       background: white;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
       padding: 2mm 0;
       /* Largura base para bobina de 80mm com respiro (76mm utilizáveis) */
-      width: 76mm; 
+      width: 76mm;
       min-height: 100mm;
       position: relative;
     }
@@ -32,30 +34,89 @@
       width: 100%;
       margin: 0 auto;
     }
-    
-    .center { text-align: center; }
-    .bold { font-weight: bold; }
-    .header { margin-bottom: 5px; }
-    .loja-nome { font-size: 14px; font-weight: bold; margin-bottom: 2px; }
-    
-    .divider { border-top: 1px dashed #000; margin: 4px 0; }
-    
-    table { width: 100%; border-collapse: collapse; }
-    th { text-align: left; border-bottom: 1px dashed #000; padding-bottom: 2px; }
-    td { padding-top: 2px; vertical-align: top; }
-    
-    .col-qtd { width: 10%; text-align: center; }
-    .col-desc { width: 65%; }
-    .col-valor { width: 25%; text-align: right; }
-    
-    .total-row { font-size: 13px; font-weight: bold; }
-    .footer { text-align: center; margin-top: 10px; font-size: 10px; }
+
+    .center {
+      text-align: center;
+    }
+
+    .bold {
+      font-weight: bold;
+    }
+
+    .header {
+      margin-bottom: 5px;
+    }
+
+    .loja-nome {
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 2px;
+    }
+
+    .divider {
+      border-top: 1px dashed #000;
+      margin: 4px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      text-align: left;
+      border-bottom: 1px dashed #000;
+      padding-bottom: 2px;
+    }
+
+    td {
+      padding-top: 2px;
+      vertical-align: top;
+    }
+
+    .col-qtd {
+      width: 10%;
+      text-align: center;
+    }
+
+    .col-desc {
+      width: 65%;
+    }
+
+    .col-valor {
+      width: 25%;
+      text-align: right;
+    }
+
+    .total-row {
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 10px;
+    }
 
     /* Esconde as configurações de painel ao imprimir de verdade */
-    @media print { 
-      body { background: transparent; padding: 0; display: block; }
-      .paper { box-shadow: none; width: 100%; height: auto; padding: 0; }
-      .print-btn { display: none; }
+    @media print {
+      body {
+        background: transparent;
+        padding: 0;
+        display: block;
+      }
+
+      .paper {
+        box-shadow: none;
+        width: 100%;
+        height: auto;
+        padding: 0;
+      }
+
+      .print-btn {
+        display: none;
+      }
     }
 
     /* Botão flutuante só para testar a janela de impressão */
@@ -71,32 +132,36 @@
       font-family: Arial, sans-serif;
       border-radius: 4px;
     }
-    .print-btn:hover { background: #0056b3; }
+
+    .print-btn:hover {
+      background: #0056b3;
+    }
   </style>
 </head>
+
 <body class="preview-mode">
 
   <div class="paper">
     <button class="print-btn" onclick="window.print()">Testar Janela de Impressão</button>
-    
+
     <div class="receipt">
       <div class="header center">
-        <div class="loja-nome">CONVENIÊNCIA PRO</div>
+        <div class="loja-nome">CONVENIÊNCIA OLIVEIRA</div>
         <div>CNPJ: 00.000.000/0001-00</div>
         <div>Rua Principal das Vendas, 123 - Centro</div>
         <div>Whatsapp: (11) 99999-0000</div>
       </div>
-      
+
       <div class="divider"></div>
-      
+
       <div style="display:flex; justify-content:space-between">
         <span>Data: 15/03/2026 19:45</span>
         <span>Op: Vendedor</span>
       </div>
       <div><strong>Pedido #843</strong> - Mesa</div>
-      
+
       <div class="divider"></div>
-      
+
       <table>
         <thead>
           <tr>
@@ -128,9 +193,9 @@
           </tr>
         </tbody>
       </table>
-      
+
       <div class="divider"></div>
-      
+
       <table style="margin-top: 5px;">
         <tr class="total-row">
           <td style="text-align: left;">TOTAL:</td>
@@ -141,18 +206,19 @@
           <td style="text-align: right;">Pix</td>
         </tr>
       </table>
-      
+
       <div class="divider"></div>
       <div><strong>Obs:</strong> Sem cebola no caldinho.</div>
       <div class="divider"></div>
-      
+
       <div class="footer">
         <div>Obrigado pela preferência!</div>
         <div style="font-size: 11px; margin-top: 2px;">Volte sempre!</div>
-        <div style="font-size: 9px; margin-top: 8px;">Desenvolvido por ConveniênciaPRO</div>
+        <div style="font-size: 9px; margin-top: 8px;">Desenvolvido por Conveniência Oliveira</div>
       </div>
     </div>
   </div>
 
 </body>
+
 </html>
