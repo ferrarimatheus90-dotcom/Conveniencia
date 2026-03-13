@@ -26,7 +26,7 @@ let DB = JSON.parse(localStorage.getItem('convpro_db') || 'null') || {
 
 let currentUser = null;
 let currentPage = 'dashboard';
-let GOOGLE_SHEETS_URL = localStorage.getItem('convpro_gs_url') || '';
+let GOOGLE_SHEETS_URL = localStorage.getItem('convpro_gs_url') || 'https://script.google.com/macros/s/AKfycbwWwf9hAxOZd8ROfJ2cRosL_1Z7zu3qvmkDF0dn-pvx4Oe8NZTyq9U2BhMcyG-NBoT-Xg/exec';
 
 function saveDB(){
   localStorage.setItem('convpro_db',JSON.stringify(DB));
