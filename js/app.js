@@ -46,6 +46,32 @@ async function syncToGoogleSheets() {
   }
 }
 
+window.forceSync = function() {
+  if (!GOOGLE_SHEETS_URL) {
+    showToast('URL da planilha não configurada!', 'error');
+    return;
+  }
+  showToast('Enviando todos os dados para a Planilha...', 'info');
+  const btn = document.getElementById('btnSyncCloud');
+  if(btn) btn.innerHTML = '⏳ Enviando...';
+  
+  fetch(GOOGLE_SHEETS_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'sincronizar', db: DB }),
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+  }).then(r => r.json()).then(res => {
+    if(btn) btn.innerHTML = '☁️ Sincronizar';
+    if(res.success) {
+      showToast('A Planilha foi atualizada com sucesso!', 'success');
+    } else {
+      showToast('Erro na planilha: ' + res.error, 'error');
+    }
+  }).catch(e => {
+    if(btn) btn.innerHTML = '☁️ Sincronizar';
+    showToast('Erro de conexão: ' + e.message, 'error');
+  });
+}
+
 function auditLog(acao,detalhes){
   DB.auditoria.push({id:Date.now(),usuario:currentUser?.name,acao,detalhes,dt:new Date().toISOString()});
   saveDB();
