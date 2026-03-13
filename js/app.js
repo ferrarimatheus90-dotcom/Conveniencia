@@ -381,6 +381,10 @@ function renderVendas(){
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label">Mesa / Nome do Cliente</label>
+          <input class="form-control" id="vendaCliente" placeholder="Ex: Mesa 04 ou João">
+        </div>
+        <div class="form-group">
           <label class="form-label">Observação</label>
           <input class="form-control" id="vendaObs" placeholder="opcional">
         </div>
@@ -470,11 +474,12 @@ function finalizarVenda(){
   const tipo=document.getElementById('vendaTipo')?.value;
   const pag=document.getElementById('vendaPag')?.value;
   const obs=escapeHTML(document.getElementById('vendaObs')?.value);
+  const cliente=escapeHTML(document.getElementById('vendaCliente')?.value);
   const total=cart.reduce((s,i)=>s+i.preco*i.qtd,0);
   const custo=cart.reduce((s,i)=>s+i.custo*i.qtd,0);
   const venda={
     id:uid('venda'),data:today(),hora:new Date().toLocaleTimeString('pt-BR'),
-    tipo,pagamento:pag,obs,total,custo,
+    tipo,pagamento:pag,obs,total,custo,cliente,
     itens:cart.map(i=>({produtoId:i.produtoId,nome:i.nome,preco:i.preco,custo:i.custo,qtd:i.qtd,subtotal:i.preco*i.qtd})),
     usuario:currentUser.name,dt:new Date().toISOString()
   };
@@ -495,6 +500,8 @@ function finalizarVenda(){
   cart=[];
   updateCart();
   document.getElementById('vendaObs').value='';
+  const cliNode = document.getElementById('vendaCliente');
+  if(cliNode) cliNode.value='';
 }
 
 // ===================== PRODUÇÃO =====================
@@ -1412,6 +1419,7 @@ function imprimirCupom(venda) {
           <span>Op: ${venda.usuario || 'Caixa'}</span>
         </div>
         <div><strong>Pedido #${venda.id}</strong> - ${venda.tipo}</div>
+        ${venda.cliente ? `<div style="margin-top:2px; font-size:13px;"><strong>Mesa/Cliente:</strong> ${venda.cliente}</div>` : ''}
         <div class="divider"></div>
         <table>
           <thead>
