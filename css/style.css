@@ -1,13 +1,13 @@
 :root {
-  --bg: #0d0f14;
-  --surface: #141720;
-  --surface2: #1c2030;
-  --surface3: #242840;
-  --border: #2a2f45;
-  --border2: #353d5c;
-  --accent: #f59e0b;
-  --accent2: #fbbf24;
-  --accent-dim: rgba(245,158,11,0.12);
+  --bg: #120e0a;
+  --surface: #1a1510;
+  --surface2: #241d15;
+  --surface3: #2e261a;
+  --border: #3b3023;
+  --border2: #4a3e2e;
+  --accent: #d4af37;
+  --accent2: #f2ce5e;
+  --accent-dim: rgba(212, 175, 55, 0.15);
   --green: #10b981;
   --green-dim: rgba(16,185,129,0.12);
   --red: #ef4444;
@@ -16,13 +16,13 @@
   --blue-dim: rgba(59,130,246,0.12);
   --purple: #a855f7;
   --purple-dim: rgba(168,85,247,0.12);
-  --text: #e8eaf2;
-  --text2: #9ca3c4;
-  --text3: #5a6180;
-  --op1: #f59e0b;
-  --op2: #3b82f6;
+  --text: #fdfbf7;
+  --text2: #d1c9b8;
+  --text3: #948b76;
+  --op1: #d4af37;
+  --op2: #a37c27;
   --radius: 10px;
-  --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  --shadow: 0 4px 24px rgba(0,0,0,0.6);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-size:14px}
@@ -31,16 +31,15 @@ html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:
 ::-webkit-scrollbar-track{background:var(--surface)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 /* LOGIN */
-#loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);position:relative;overflow:hidden}
-#loginScreen::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 60% at 50% 50%,rgba(245,158,11,0.07) 0%,transparent 70%)}
+#loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);position:relative;overflow:hidden;background-image:radial-gradient(ellipse 60% 60% at 50% 50%,rgba(212, 175, 55,0.08) 0%,transparent 70%);}
 .login-card{background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:48px 40px;width:380px;max-width:95vw;position:relative;z-index:1}
 .login-logo{font-family:'Outfit',sans-serif;font-size:26px;font-weight:800;color:var(--accent);letter-spacing:-0.5px;margin-bottom:4px}
 .login-sub{color:var(--text3);font-size:12px;margin-bottom:36px;font-family:'Roboto Mono',monospace}
 .login-label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:block}
 .login-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:.2s;margin-bottom:18px}
 .login-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
-.login-btn{width:100%;background:var(--accent);color:#000;border:none;border-radius:var(--radius);padding:13px;font-family:'Outfit',sans-serif;font-weight:700;font-size:15px;cursor:pointer;transition:.2s;margin-top:4px}
-.login-btn:hover{background:var(--accent2);transform:translateY(-1px)}
+.login-btn{width:100%;background:var(--accent);color:#0a0805;border:none;border-radius:var(--radius);padding:13px;font-family:'Outfit',sans-serif;font-weight:700;font-size:15px;cursor:pointer;transition:.2s;margin-top:4px}
+.login-btn:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 4px 15px rgba(212,175,55,0.3);}
 .login-error{color:var(--red);font-size:12px;margin-top:-10px;margin-bottom:12px;display:none}
 /* APP SHELL */
 #app{display:none;height:100vh;overflow:hidden;flex-direction:row}
