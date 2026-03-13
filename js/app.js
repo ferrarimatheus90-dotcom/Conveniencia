@@ -68,7 +68,11 @@ window.forceSync = function() {
     }
   }).catch(e => {
     if(btn) btn.innerHTML = '☁️ Sincronizar';
-    showToast('Erro de conexão: ' + e.message, 'error');
+    if(e.message.includes('Failed to fetch')) {
+      showToast('Erro: Verifique se a Implantação no Google está como "Qualquer pessoa"', 'error');
+    } else {
+      showToast('Erro de conexão: ' + e.message, 'error');
+    }
   });
 }
 
