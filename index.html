@@ -2,19 +2,21 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Conveniência Oliveira – Sistema de Gestão</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&family=Outfit:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
 <!-- LOGIN -->
 <div id="loginScreen">
-  <div class="login-card">
-    <div class="login-logo">⚡ Conveniência Oliveira</div>
-    <div class="login-sub">Sistema de Gestão Comercial</div>
-    <label class="login-label">Usuário</label>
+  <div class="login-card" style="text-align:center;">
+    <img src="img/logo.jpg" alt="Conveniência Oliveira" style="width:160px; border-radius:12px; margin: 0 auto 12px; display:block; box-shadow:0 4px 15px rgba(0,0,0,0.5); object-fit: cover;">
+    <div class="login-logo" style="justify-content:center;">Conveniência Oliveira</div>
+    <div class="login-sub" style="text-align:center;">Sistema de Gestão Comercial</div>
+    
+    <label class="login-label" style="text-align:left;">Usuário</label>
     <input class="login-input" id="loginUser" type="text" placeholder="seu usuário" autocomplete="username">
     <label class="login-label">Senha</label>
     <input class="login-input" id="loginPass" type="password" placeholder="••••••" autocomplete="current-password">
@@ -30,9 +32,10 @@
 
   <!-- SIDEBAR -->
   <div id="sidebar">
-    <div class="sidebar-header">
-      <div class="sidebar-logo">⚡ Conveniência Oliveira</div>
-      <div class="sidebar-user" id="sidebarUser"></div>
+    <div class="sidebar-header" style="text-align:center; padding: 25px 15px 20px;">
+      <img src="img/logo.jpg" alt="Logo" style="width:90px; border-radius:8px; margin: 0 auto 10px; display:block; box-shadow:0 2px 10px rgba(0,0,0,0.3); object-fit: cover;">
+      <div class="sidebar-logo" style="justify-content:center; font-size:15px; margin-bottom:2px;">Conveniência Oliveira</div>
+      <div class="sidebar-user" id="sidebarUser" style="text-align:center;"></div>
     </div>
     <div class="sidebar-nav" id="sidebarNav"></div>
     <div class="sidebar-footer">
