@@ -1,5 +1,5 @@
-// ===================== DATA STORE =====================
 const USERS = [
+  {id:0,username:'dev',password:'dev@2026',role:'dev',name:'Desenvolvedor'},
   {id:1,username:'admin',password:'Conveniencia@2005#',role:'admin',name:'Administrador'},
   {id:2,username:'vendedor',password:'Conveniencia@2005#',role:'funcionario',name:'Vendedor'}
 ];
@@ -85,7 +85,7 @@ function updateDate(){
 }
 
 // ===================== SIDEBAR =====================
-const NAV_ADMIN = [
+const NAV_DEV = [
   {section:'Geral'},
   {id:'dashboard',icon:'📊',label:'Dashboard'},
   {id:'caixa',icon:'🏦',label:'Caixa do Dia'},
@@ -105,13 +105,33 @@ const NAV_ADMIN = [
   {section:'Sistema'},
   {id:'backup',icon:'💾',label:'Backup'},
 ];
+const NAV_ADMIN = [
+  {section:'Geral'},
+  {id:'dashboard',icon:'📊',label:'Dashboard'},
+  {id:'caixa',icon:'🏦',label:'Caixa do Dia'},
+  {section:'Operações'},
+  {id:'vendas',icon:'🛒',label:'Registrar Venda'},
+  {id:'producao',icon:'🔥',label:'Produção'},
+  {id:'consumo',icon:'📦',label:'Consumo Interno'},
+  {section:'Estoque'},
+  {id:'estoque',icon:'🗄️',label:'Estoque'},
+  {id:'compras',icon:'🧾',label:'Compras'},
+  {section:'Cadastros'},
+  {id:'produtos',icon:'🏷️',label:'Produtos'},
+  {section:'Relatórios'},
+  {id:'relatorios',icon:'📈',label:'Relatórios'},
+  {id:'auditoria',icon:'🔍',label:'Auditoria'},
+];
 const NAV_FUNC = [
   {section:'Venda'},
   {id:'vendas',icon:'🛒',label:'Registrar Venda'},
 ];
 
 function buildSidebar(){
-  const nav=currentUser.role==='admin'?NAV_ADMIN:NAV_FUNC;
+  let nav = NAV_FUNC;
+  if(currentUser.role === 'dev') nav = NAV_DEV;
+  else if(currentUser.role === 'admin') nav = NAV_ADMIN;
+  
   const el=document.getElementById('sidebarNav');
   el.innerHTML=nav.map(n=>n.section?
     `<div class="nav-section">${n.section}</div>`:
@@ -143,6 +163,7 @@ const PAGE_TITLES={
 };
 function navigate(page){
   if(currentUser.role==='funcionario'&&page!=='vendas')page='vendas';
+  if(currentUser.role==='admin'&&(page==='usuarios'||page==='backup'))page='dashboard';
   currentPage=page;
   setActiveNav(page);
   document.getElementById('topbarTitle').textContent=PAGE_TITLES[page]||page;
@@ -287,7 +308,12 @@ function renderDashboard(){
           <td><span class="badge blue">${v.tipo}</span></td>
           <td><span class="badge green">${v.pagamento}</span></td>
           <td class="text-amber mono">${fmt(v.total)}</td>
-          <td><button class="btn btn-ghost btn-sm" onclick="reimprimirVenda(${v.id})" title="Imprimir Cupom">🖨️</button></td>
+          <td>
+            <div class="flex" style="gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="reimprimirVenda(${v.id})" title="Imprimir Cupom">🖨️</button>
+              ${currentUser.role==='admin'||currentUser.role==='dev'?`<button class="btn btn-danger btn-sm" onclick="estornarVenda(${v.id})" title="Estornar/Cancelar Venda">✖</button>`:''}
+            </div>
+          </td>
         </tr>`).join('')}
       </tbody>
     </table></div>`:''}
@@ -1456,6 +1482,31 @@ function reimprimirVenda(vendaId) {
     imprimirCupom(venda);
   } else {
     showToast('Venda não encontrada.', 'error');
+  }
+}
+
+function estornarVenda(id){
+  if(!confirm('🚨 ATENÇÃO: Tem certeza que deseja estornar e cancelar esta venda? Os produtos voltarão para o estoque e o valor será removido do caixa. Esta ação é irreversível.')) return;
+  const idx = DB.vendas.findIndex(v=>v.id===id);
+  if(idx===-1) return;
+  const v = DB.vendas[idx];
+  
+  // Devolver estoque 
+  v.itens.forEach(item => {
+    const p = DB.produtos.find(x => x.id === item.produtoId);
+    if(p && p.tipo === 'pronto') {
+      p.estoque += item.qtd; // Devolve o item que foi vendido pro saldo 
+    }
+  });
+  
+  auditLog('ESTORNO', `Venda #${v.id} estornada. Valor de ${fmt(v.total)}`);
+  
+  DB.vendas.splice(idx, 1);
+  saveDB();
+  showToast('Venda estornada com sucesso.', 'info');
+  // Se estiver na tela do Dashboard, recarrega
+  if(currentPage==='dashboard') {
+    document.getElementById('content').innerHTML = renderDashboard();
   }
 }
 
