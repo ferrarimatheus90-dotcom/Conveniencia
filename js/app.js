@@ -26,8 +26,25 @@ let DB = JSON.parse(localStorage.getItem('convpro_db') || 'null') || {
 
 let currentUser = null;
 let currentPage = 'dashboard';
+let GOOGLE_SHEETS_URL = localStorage.getItem('convpro_gs_url') || '';
 
-function saveDB(){localStorage.setItem('convpro_db',JSON.stringify(DB))}
+function saveDB(){
+  localStorage.setItem('convpro_db',JSON.stringify(DB));
+  syncToGoogleSheets(); // Envia para a nuvem de forma invisível
+}
+
+async function syncToGoogleSheets() {
+  if (!GOOGLE_SHEETS_URL) return;
+  try {
+    fetch(GOOGLE_SHEETS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'sincronizar', db: DB }),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' } // 'text/plain' evita erro de CORS no Apps Script
+    });
+  } catch(e) {
+    console.error("Erro no background ao sincronizar com Google Sheets", e);
+  }
+}
 
 function auditLog(acao,detalhes){
   DB.auditoria.push({id:Date.now(),usuario:currentUser?.name,acao,detalhes,dt:new Date().toISOString()});
@@ -1198,7 +1215,7 @@ function renderBackup(){
       <div class="card" style="border-color:var(--border);background:var(--surface2)">
         <h3 style="font-family:'Syne',sans-serif;font-size:16px;margin-bottom:10px">📤 Exportar Dados (Backup)</h3>
         <p class="text-muted mb-4" style="font-size:13px">Baixe todos os dados do sistema em um arquivo .json seguro para poder carregar futuramente.</p>
-        <button class="btn btn-primary" onclick="exportarBackup()">💾 Baixar Backup Completo</button>
+        <button class="btn btn-primary" onclick="exportarBackup()">💾 Baixar Backup Manual</button>
       </div>
       
       <div class="card" style="border-color:var(--border);background:var(--surface2)">
@@ -1209,8 +1226,60 @@ function renderBackup(){
           <button class="btn btn-danger" onclick="importarBackup()">Restaurar</button>
         </div>
       </div>
+      
+      <div class="card" style="border-color:var(--border);background:var(--surface2);grid-column: 1 / -1;">
+        <h3 style="font-family:'Syne',sans-serif;font-size:16px;margin-bottom:10px">☁️ Banco de Dados no Google Sheets</h3>
+        <p class="text-muted mb-4" style="font-size:13px">Integre o sistema com o Google Planilhas. Cada venda efetuada e alteração irá alimentar sua planilha de estoque na nuvem de forma invisível.</p>
+        <div class="form-row cols-2" style="align-items: flex-end;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Web App URL (Apps Script)</label>
+            <input type="text" id="gsUrlInput" class="form-control" value="${GOOGLE_SHEETS_URL}" placeholder="https://script.google.com/macros/s/...">
+          </div>
+          <div class="flex" style="gap:10px">
+            <button class="btn btn-primary" onclick="salvarConfigGS()">Vincular URL</button>
+            <button class="btn btn-ghost" onclick="puxarDoGoogleSheets()"><span class="icon">🔄</span> Puxar (Planilha ➞ Sistema)</button>
+          </div>
+        </div>
+        <p class="text-muted mt-3" style="font-size:11px; margin-top:10px">
+          <em>Nota: O botão "Puxar" substitui os dados locais pelos dados que estiverem salvos lá no seu Google planilhas. Use caso altere valores lá e queira trazer pra cá.</em>
+        </p>
+      </div>
     </div>
   </div>`;
+}
+
+function salvarConfigGS() {
+   const val = document.getElementById('gsUrlInput').value.trim();
+   GOOGLE_SHEETS_URL = val;
+   localStorage.setItem('convpro_gs_url', val);
+   showToast('URL do Google associada com sucesso!', 'success');
+   // Sincroniza logo de cara as variáveis para criar as planilhas pra ele
+   if (val !== '') {
+     syncToGoogleSheets();
+     showToast('Subindo base local para a planilha pela 1ª vez...', 'info');
+   }
+}
+
+async function puxarDoGoogleSheets() {
+   if (!GOOGLE_SHEETS_URL) {
+      showToast('Nenhuma URL inserida.', 'error'); return;
+   }
+   showToast('Buscando dados na planilha... aguarde', 'info');
+   try {
+      const res = await fetch(GOOGLE_SHEETS_URL + "?action=carregar");
+      const remoteDb = await res.json();
+      if(remoteDb && remoteDb.produtos && remoteDb.produtos.length >= 0) {
+         // Salva dados baixados ignorando o sync original na rodada (pra não subir de volta o vazio enquanto desce)
+         DB = remoteDb;
+         localStorage.setItem('convpro_db',JSON.stringify(DB));
+         showToast('Carga concluída! Atualizando sistema...', 'success');
+         setTimeout(() => location.reload(), 1500);
+      } else {
+         showToast('Carga não reconheceu Produtos. A planilha existe?', 'error');
+      }
+   } catch (e) {
+      showToast('Erro ao ler a Planilha: ' + e.message, 'error');
+   }
 }
 
 function exportarBackup(){
