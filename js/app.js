@@ -355,7 +355,10 @@ function renderVendas(){
     </div>
     <div>
       <div class="card mb-3">
-        <div class="card-title">🛒 Carrinho</div>
+        <div class="flex items-center justify-between mb-3">
+          <div class="card-title" style="margin:0">🛒 Carrinho</div>
+          <button class="btn btn-ghost btn-sm" style="font-size:12px; border:1px solid var(--border)" onclick="abrirModalMesas()"><span class="icon">📝</span> Mesas Abertas</button>
+        </div>
         <div id="cartItems"><div class="empty-state" style="padding:16px"><div class="icon">🛒</div>Adicione produtos</div></div>
         <div class="divider"></div>
         <div class="flex items-center justify-between mb-3">
@@ -392,7 +395,10 @@ function renderVendas(){
           <input type="checkbox" id="vendaImprimir" checked style="cursor: pointer; transform: scale(1.1);" onclick="event.stopPropagation()">
           <label for="vendaImprimir" style="margin:0; cursor: pointer; user-select: none; font-size: 13px;">Imprimir comprovante (80mm)</label>
         </div>
-        <button class="btn btn-primary" style="width:100%;padding:13px;font-size:15px" onclick="finalizarVenda()">✅ Finalizar Venda</button>
+        <div class="flex" style="gap:8px; margin-top:15px">
+          <button class="btn btn-ghost" style="flex:1; background:var(--surface2); color:var(--text1); padding:13px; font-size:14px" onclick="salvarMesaAberta()">⏳ Deixar em Aberto</button>
+          <button class="btn btn-primary" style="flex:1; padding:13px; font-size:14px" onclick="finalizarVenda()">✅ Finalizar e Cobrar</button>
+        </div>
       </div>
     </div>
   </div>`;
@@ -489,6 +495,15 @@ function finalizarVenda(){
     if(p&&p.tipo==='pronto')p.estoque=Math.max(0,p.estoque-item.qtd);
   });
   DB.vendas.push(venda);
+  
+  // Se finalizou e havia mesa aberta com esse nome, tira das mesas abertas
+  const clienteFinalizado = cliente.trim();
+  if(clienteFinalizado){
+     DB.mesas_abertas = DB.mesas_abertas || [];
+     const idxA = DB.mesas_abertas.findIndex(x => x.cliente.toLowerCase() === clienteFinalizado.toLowerCase());
+     if(idxA >= 0) DB.mesas_abertas.splice(idxA, 1);
+  }
+
   saveDB();
   auditLog('VENDA',`#${venda.id} – ${fmt(total)} – ${pag}`);
   showToast('Venda registrada com sucesso! '+fmt(total),'success');
@@ -502,6 +517,109 @@ function finalizarVenda(){
   document.getElementById('vendaObs').value='';
   const cliNode = document.getElementById('vendaCliente');
   if(cliNode) cliNode.value='';
+}
+
+// ===================== MESAS ABERTAS =====================
+function salvarMesaAberta(){
+  if(cart.length===0) { showToast('O carrinho está vazio!', 'error'); return; }
+  let cliente = document.getElementById('vendaCliente')?.value.trim();
+  if(!cliente){
+    cliente = prompt('Digite o número da Mesa ou Nome do Cliente:');
+    if(!cliente) return;
+    document.getElementById('vendaCliente').value = cliente;
+  }
+
+  DB.mesas_abertas = DB.mesas_abertas || [];
+  const idx = DB.mesas_abertas.findIndex(x => x.cliente.toLowerCase() === cliente.toLowerCase());
+  
+  const obs = document.getElementById('vendaObs')?.value || '';
+  
+  const novaMesa = {
+    cliente: cliente,
+    obs: obs,
+    itens: JSON.parse(JSON.stringify(cart)), // clona os itens
+    dtAtualizacao: new Date().toISOString()
+  };
+  
+  if(idx >= 0){
+    DB.mesas_abertas[idx] = novaMesa;
+  } else {
+    DB.mesas_abertas.push(novaMesa);
+  }
+  
+  saveDB();
+  
+  // Imprimir comanda de cozinha (parcial)
+  if (document.getElementById('vendaImprimir')?.checked) {
+    imprimirComandaParcial(novaMesa);
+  } else {
+    showToast(`Pedido salvo na comanda: ${cliente}`, 'success');
+  }
+  
+  cart = [];
+  updateCart();
+  document.getElementById('vendaObs').value='';
+  document.getElementById('vendaCliente').value='';
+}
+
+function abrirModalMesas(){
+  DB.mesas_abertas = DB.mesas_abertas || [];
+  openModal(`
+    <div class="modal-title">📝 Mesas / Contas em Aberto</div>
+    <div class="text-muted" style="margin-bottom:15px; font-size:13px;">Selecione uma mesa para adicionar mais itens ou para realizar a cobrança final.</div>
+    ${DB.mesas_abertas.length === 0 ? '<div class="empty-state"><div class="icon">📝</div>Nenhuma mesa em aberto no momento</div>' : ''}
+    ${DB.mesas_abertas.length ? `<div class="table-wrap"><table>
+      <thead><tr><th>Mesa/Cliente</th><th>Qtd Itens</th><th>Total Atual</th><th>Ações</th></tr></thead>
+      <tbody>${DB.mesas_abertas.map((m, idx) => `
+        <tr>
+          <td><strong>${m.cliente}</strong><br><small class="text-muted">${new Date(m.dtAtualizacao).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</small></td>
+          <td class="mono">${m.itens.reduce((s,i) => s + i.qtd, 0)} un</td>
+          <td class="text-amber mono">${fmt(m.itens.reduce((s,i) => s + (i.preco * i.qtd), 0))}</td>
+          <td>
+             <button class="btn btn-primary btn-sm" onclick="carregarMesaAberta(${idx})">Abrir</button>
+             <button class="btn btn-danger btn-sm" onclick="excluirMesaAberta(${idx})">×</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>` : ''}
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Fechar</button></div>
+  `);
+}
+
+function carregarMesaAberta(idx){
+  const m = DB.mesas_abertas[idx];
+  if(!m) return;
+  cart = JSON.parse(JSON.stringify(m.itens));
+  document.getElementById('vendaCliente').value = m.cliente;
+  document.getElementById('vendaObs').value = m.obs || '';
+  updateCart();
+  closeModal();
+  showToast(`Mesa ${m.cliente} carregada para o caixa!`, 'info');
+}
+
+function excluirMesaAberta(idx){
+  if(confirm('Tem certeza que deseja apagar essa comanda? Os itens não foram cobrados do cliente.')){
+    DB.mesas_abertas.splice(idx, 1);
+    saveDB();
+    abrirModalMesas();
+  }
+}
+
+function imprimirComandaParcial(mesa){
+  const total = mesa.itens.reduce((s,i) => s + (i.preco * i.qtd), 0);
+  const mockupVenda = {
+    id: 'ABERTA',
+    data: today(),
+    hora: new Date(mesa.dtAtualizacao).toLocaleTimeString('pt-BR'),
+    tipo: 'Comanda / Parcial',
+    usuario: currentUser?.name || 'Vendedor',
+    cliente: mesa.cliente,
+    obs: mesa.obs,
+    itens: mesa.itens.map(i => ({...i, subtotal: i.preco * i.qtd})),
+    total: total,
+    pagamento: 'A PAGAR'
+  };
+  imprimirCupom(mockupVenda);
 }
 
 // ===================== PRODUÇÃO =====================

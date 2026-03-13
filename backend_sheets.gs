@@ -14,6 +14,7 @@ function doGet(e) {
       compras: getSheetData('Compras'),
       caixas: getSheetData('Caixas'),
       auditoria: getSheetData('Auditoria'),
+      mesas_abertas: getSheetData('MesasAbertas'),
       nextId: getSheetConfig('Config', 'nextId') || {produto:9,venda:1,compra:1,producao:1,consumo:1,caixa:1}
     };
     return ContentService.createTextOutput(JSON.stringify(db)).setMimeType(ContentService.MimeType.JSON);
@@ -37,6 +38,7 @@ function doPost(e) {
       setSheetData('Compras', db.compras);
       setSheetData('Caixas', db.caixas);
       setSheetData('Auditoria', db.auditoria);
+      if(db.mesas_abertas) setSheetData('MesasAbertas', db.mesas_abertas);
       setSheetConfig('Config', 'nextId', db.nextId);
       
       return ContentService.createTextOutput(JSON.stringify({success: true, message: "Sincronizado com sucesso!"})).setMimeType(ContentService.MimeType.JSON);
