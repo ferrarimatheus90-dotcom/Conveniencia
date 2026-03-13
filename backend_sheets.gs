@@ -145,3 +145,96 @@ function setSheetConfig(sheetName, key, value) {
     sheet.appendRow([key, valStr]);
   }
 }
+
+// ==========================================
+// FUNÇÃO PARA CRIAR E CONFIGURAR A PLANILHA DO CLIENTE
+// ==========================================
+function configurarPlanilhaInicial() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  var abasConfig = [
+    { 
+      nome: 'Produtos', 
+      headers: ['id', 'nome', 'categoria', 'operacao', 'unidade', 'custo', 'preco', 'estoque', 'estoqueMin', 'status', 'tipo'],
+      exemplo: [1, 'Skol 600ml', 'Cerveja', 'Bebidas', 'un', 3.50, 7.00, 24, 10, 'ativo', 'pronto']
+    },
+    { 
+      nome: 'Vendas', 
+      headers: ['id', 'data', 'hora', 'tipo', 'pagamento', 'cliente', 'obs', 'total', 'custo', 'itens', 'usuario', 'dt'],
+      exemplo: ['venda_1', '13-03-2026', '14:30', 'Mesa', 'Pix', 'Mesa 04', 'Sem gelo', 14.00, 7.00, '[{"nome":"Skol 600ml","qtd":2}]', 'Vendedor', new Date().toISOString()]
+    },
+    {
+      nome: 'MesasAbertas',
+      headers: ['cliente', 'obs', 'itens', 'dtAtualizacao'],
+      exemplo: ['Mesa 04', '', '[{"nome":"Coca-Cola","qtd":1}]', new Date().toISOString()]
+    },
+    {
+      nome: 'Compras',
+      headers: ['id', 'data', 'hora', 'fornecedor', 'itens', 'total', 'usuario', 'dt'],
+      exemplo: ['compra_1', '13-03-2026', '10:00', 'Ambev', '[{"nome":"Skol","qtd":24}]', 84.00, 'Admin', '']
+    },
+    {
+      nome: 'Caixas',
+      headers: ['id', 'openedAt', 'closedAt', 'openedBy', 'closedBy', 'saldoInicial', 'saldoFinal', 'dif', 'vendas', 'dinheiro', 'cartao', 'pix', 'sangrias', 'suprimentos'],
+      exemplo: []
+    },
+    {
+      nome: 'Producoes',
+      headers: ['id', 'data', 'hora', 'usuario', 'itens', 'notas', 'status'],
+      exemplo: []
+    },
+    {
+      nome: 'Consumos',
+      headers: ['id', 'data', 'hora', 'usuario', 'itens', 'motivo', 'dt'],
+      exemplo: []
+    },
+    {
+      nome: 'Auditoria',
+      headers: ['id', 'usuario', 'acao', 'detalhes', 'dt'],
+      exemplo: []
+    },
+    {
+      nome: 'Config',
+      headers: ['Chave', 'Valor'],
+      exemplo: ['nextId', '{"produto":9,"venda":1,"compra":1,"producao":1,"consumo":1,"caixa":1}']
+    }
+  ];
+
+  // Remove abas vazias padrões se existir ('Página1') apenas no fim, para evitar apagar a última
+  
+  abasConfig.forEach(function(aba) {
+    var sheet = ss.getSheetByName(aba.nome);
+    if (!sheet) {
+      sheet = ss.insertSheet(aba.nome);
+    }
+    
+    // Limpa a página
+    sheet.clear();
+    
+    // Insere o Cabeçalho
+    sheet.getRange(1, 1, 1, aba.headers.length).setValues([aba.headers]);
+    
+    // Formata o Cabeçalho com as cores do logo (Fundo Preto Escuro e Texto Dourado)
+    var headerRange = sheet.getRange(1, 1, 1, aba.headers.length);
+    headerRange.setBackground('#1a1510'); 
+    headerRange.setFontColor('#d4af37'); 
+    headerRange.setFontWeight('bold');
+    headerRange.setHorizontalAlignment('center');
+    
+    // Se tiver linha de exemplo, insere
+    if (aba.exemplo && aba.exemplo.length > 0) {
+      sheet.getRange(2, 1, 1, aba.exemplo.length).setValues([aba.exemplo]);
+    }
+    
+    // Auto-ajusta as colunas para ficar visualmente bonito
+    for (var i = 1; i <= aba.headers.length; i++) {
+        sheet.autoResizeColumn(i);
+    }
+  });
+  
+  // Opcional: Remover "Página1" se ela sobrou em branco
+  var sheetPadrao = ss.getSheetByName('Página1') || ss.getSheetByName('Sheet1');
+  if (sheetPadrao && ss.getSheets().length > 1) {
+    ss.deleteSheet(sheetPadrao);
+  }
+}
