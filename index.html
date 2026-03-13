@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ConveniênciaPRO – Sistema de Gestão</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">⚡ ConveniênciaPRO</div>
+    <div class="login-sub">Sistema de Gestão Comercial</div>
+    <label class="login-label">Usuário</label>
+    <input class="login-input" id="loginUser" type="text" placeholder="seu usuário" autocomplete="username">
+    <label class="login-label">Senha</label>
+    <input class="login-input" id="loginPass" type="password" placeholder="••••••" autocomplete="current-password">
+    <div class="login-error" id="loginError">Usuário ou senha incorretos.</div>
+    <button class="login-btn" onclick="doLogin()">Entrar</button>
+    <div style="margin-top:18px;font-size:11px;color:var(--text3);text-align:center;font-family:'DM Mono',monospace">
+      admin / admin123 &nbsp;|&nbsp; vendedor / venda123
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <!-- SIDEBAR OVERLAY -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">⚡ ConveniênciaPRO</div>
+      <div class="sidebar-user" id="sidebarUser"></div>
+    </div>
+    <div class="sidebar-nav" id="sidebarNav"></div>
+    <div class="sidebar-footer">
+      <div class="nav-item" onclick="doLogout()">
+        <span class="icon">🚪</span> Sair
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+    <div class="topbar" id="topbar">
+      <div class="hamburger" onclick="toggleSidebar()">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="topbar-title" id="topbarTitle">Dashboard</div>
+      <div class="topbar-badge mono" id="topbarDate"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
