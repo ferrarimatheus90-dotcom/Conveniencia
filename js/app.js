@@ -1,7 +1,7 @@
 // ===================== DATA STORE =====================
 const USERS = [
-  {id:1,username:'admin',password:'admin123',role:'admin',name:'Administrador'},
-  {id:2,username:'vendedor',password:'venda123',role:'funcionario',name:'Vendedor'}
+  {id:1,username:'admin',password:'Conveniencia@2005#',role:'admin',name:'Administrador'},
+  {id:2,username:'vendedor',password:'Conveniencia@2005#',role:'funcionario',name:'Vendedor'}
 ];
 
 let DB = JSON.parse(localStorage.getItem('convpro_db') || 'null') || {
