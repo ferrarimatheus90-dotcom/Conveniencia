@@ -70,11 +70,17 @@ function getSheetData(sheetName) {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
       var val = data[i][j];
-      // Tenta converter strings JSON de volta para array/objeto (ex: itens da venda)
       if (typeof val === 'string' && (val.indexOf('[') === 0 || val.indexOf('{') === 0)) {
         try { val = JSON.parse(val); } catch(e){}
       }
       obj[headers[j]] = val !== "" ? val : null;
+    }
+    // Restaura o array de itens a partir da coluna oculta, ignorando a coluna de texto legível
+    if (obj['_itens_json']) {
+      try { 
+        obj.itens = (typeof obj['_itens_json'] === 'string') ? JSON.parse(obj['_itens_json']) : obj['_itens_json']; 
+      } catch(e){}
+      delete obj['_itens_json'];
     }
     rows.push(obj);
   }
@@ -94,6 +100,14 @@ function setSheetData(sheetName, rows) {
   
   if (!rows || rows.length === 0) return;
   
+  // Pre-process rows to create readable strings for 'itens' but save JSON in '_itens_json'
+  for (var k = 0; k < rows.length; k++) {
+    if (rows[k].itens && typeof rows[k].itens === 'object' && Array.isArray(rows[k].itens)) {
+      rows[k]['_itens_json'] = JSON.stringify(rows[k].itens);
+      rows[k].itens = rows[k].itens.map(function(item) { return item.qtd + "x " + item.nome; }).join(', ');
+    }
+  }
+  
   // Extrai cabeçalhos (pegando as chaves do primeiro objeto)
   var headers = Object.keys(rows[0]);
   var dataRow = [headers];
@@ -102,7 +116,7 @@ function setSheetData(sheetName, rows) {
     var rowData = [];
     for (var j = 0; j < headers.length; j++) {
       var val = rows[i][headers[j]];
-      // Se for um array ou objeto, converte para string para caber na célula (ex: os itens do carrinho)
+      // Se for um array ou objeto, converte para string para caber na célula
       if (typeof val === 'object' && val !== null) {
         val = JSON.stringify(val);
       }
@@ -166,18 +180,18 @@ function configurarPlanilhaInicial() {
     },
     { 
       nome: 'Vendas', 
-      headers: ['id', 'data', 'hora', 'tipo', 'pagamento', 'cliente', 'obs', 'total', 'custo', 'itens', 'usuario', 'dt'],
-      exemplo: ['venda_1', '13-03-2026', '14:30', 'Mesa', 'Pix', 'Mesa 04', 'Sem gelo', 14.00, 7.00, '[{"nome":"Skol 600ml","qtd":2}]', 'Vendedor', new Date().toISOString()]
+      headers: ['id', 'data', 'hora', 'tipo', 'pagamento', 'cliente', 'obs', 'total', 'custo', 'itens', 'usuario', 'dt', '_itens_json'],
+      exemplo: ['venda_1', '13-03-2026', '14:30', 'Mesa', 'Pix', 'Mesa 04', 'Sem gelo', 14.00, 7.00, '2x Skol 600ml', 'Vendedor', new Date().toISOString(), '[{"nome":"Skol 600ml","qtd":2}]']
     },
     {
       nome: 'MesasAbertas',
-      headers: ['cliente', 'obs', 'itens', 'dtAtualizacao'],
-      exemplo: ['Mesa 04', '', '[{"nome":"Coca-Cola","qtd":1}]', new Date().toISOString()]
+      headers: ['cliente', 'obs', 'itens', 'dtAtualizacao', '_itens_json'],
+      exemplo: ['Mesa 04', '', '1x Coca-Cola', new Date().toISOString(), '[{"nome":"Coca-Cola","qtd":1}]']
     },
     {
       nome: 'Compras',
-      headers: ['id', 'data', 'hora', 'fornecedor', 'itens', 'total', 'usuario', 'dt'],
-      exemplo: ['compra_1', '13-03-2026', '10:00', 'Ambev', '[{"nome":"Skol","qtd":24}]', 84.00, 'Admin', '']
+      headers: ['id', 'data', 'hora', 'fornecedor', 'itens', 'total', 'usuario', 'dt', '_itens_json'],
+      exemplo: ['compra_1', '13-03-2026', '10:00', 'Ambev', '24x Skol', 84.00, 'Admin', '', '[{"nome":"Skol","qtd":24}]']
     },
     {
       nome: 'Caixas',
@@ -186,12 +200,12 @@ function configurarPlanilhaInicial() {
     },
     {
       nome: 'Producoes',
-      headers: ['id', 'data', 'hora', 'usuario', 'itens', 'notas', 'status'],
+      headers: ['id', 'data', 'hora', 'usuario', 'itens', 'notas', 'status', '_itens_json'],
       exemplo: []
     },
     {
       nome: 'Consumos',
-      headers: ['id', 'data', 'hora', 'usuario', 'itens', 'motivo', 'dt'],
+      headers: ['id', 'data', 'hora', 'usuario', 'itens', 'motivo', 'dt', '_itens_json'],
       exemplo: []
     },
     {
