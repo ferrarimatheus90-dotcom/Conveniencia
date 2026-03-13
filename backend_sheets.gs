@@ -3,6 +3,9 @@
 // ==========================================
 
 function doGet(e) {
+  if (!e || !e.parameter) {
+    return ContentService.createTextOutput(JSON.stringify({status: "Por favor, não execute esta função diretamente. Use a URL gerada na implantação ou execute configurarPlanilhaInicial()."})).setMimeType(ContentService.MimeType.JSON);
+  }
   var action = e.parameter.action;
   
   if (action === 'carregar') {
@@ -24,6 +27,9 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  if (!e || !e.postData || !e.postData.contents) {
+    return ContentService.createTextOutput(JSON.stringify({success: false, error: "Nenhum dado enviado."})).setMimeType(ContentService.MimeType.JSON);
+  }
   try {
     var payload = JSON.parse(e.postData.contents);
     
