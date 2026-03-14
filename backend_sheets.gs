@@ -23,6 +23,34 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify(db)).setMimeType(ContentService.MimeType.JSON);
   }
   
+  if (action === 'carregar_cardapio') {
+    var db = {
+      produtos: getSheetData('Produtos')
+    };
+    return ContentService.createTextOutput(JSON.stringify(db)).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'get_pedidos') {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('PedidosDigitais');
+    if (!sheet) return ContentService.createTextOutput(JSON.stringify({pedidos_novos: []})).setMimeType(ContentService.MimeType.JSON);
+    var data = sheet.getDataRange().getValues();
+    var pedidos = [];
+    for(var i=1; i<data.length; i++){
+      if(data[i][4] === 'pendente'){
+        var p = {
+           id: data[i][0],
+           cliente: data[i][1],
+           obs: data[i][2],
+           status: data[i][4],
+           dtAtualizacao: data[i][5]
+        };
+        try { p.itens = JSON.parse(data[i][6]); } catch(e){ p.itens = []; }
+        pedidos.push(p);
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({pedidos_novos: pedidos})).setMimeType(ContentService.MimeType.JSON);
+  }
+  
   return ContentService.createTextOutput(JSON.stringify({status: "Servidor Google Sheets Ativo"})).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -49,6 +77,38 @@ function doPost(e) {
       
       return ContentService.createTextOutput(JSON.stringify({success: true, message: "Sincronizado com sucesso!"})).setMimeType(ContentService.MimeType.JSON);
     }
+
+    if (payload.action === 'novo_pedido') {
+      var pedido = payload.pedido;
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName('PedidosDigitais');
+      if (!sheet) {
+        sheet = ss.insertSheet('PedidosDigitais');
+        sheet.appendRow(['id', 'cliente', 'obs', 'itens', 'status', 'dt', '_itens_json']);
+        sheet.getRange(1, 1, 1, 7).setBackground('#1a1510').setFontColor('#d4af37').setFontWeight('bold');
+      }
+      var itensStr = pedido.itens.map(function(item) { return item.qtd + "x " + item.nome; }).join(', ');
+      var id = 'ped_' + new Date().getTime();
+      sheet.appendRow([id, pedido.cliente, pedido.obs, itensStr, 'pendente', pedido.dtAtualizacao, JSON.stringify(pedido.itens)]);
+      
+      return ContentService.createTextOutput(JSON.stringify({success: true, message: "Pedido enviado!"})).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (payload.action === 'marcar_pedidos_recebidos') {
+      var ids = payload.ids;
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName('PedidosDigitais');
+      if (sheet) {
+        var data = sheet.getDataRange().getValues();
+        for(var i=1; i<data.length; i++){
+          if(ids.indexOf(data[i][0]) !== -1){
+            sheet.getRange(i+1, 5).setValue('recebido');
+          }
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
+    }
+
   } catch(err) {
     return ContentService.createTextOutput(JSON.stringify({success: false, error: err.toString()})).setMimeType(ContentService.MimeType.JSON);
   }

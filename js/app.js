@@ -100,8 +100,89 @@ window.forceSync = function() {
 }
 
 function auditLog(acao,detalhes){
-  DB.auditoria.push({id:Date.now(),usuario:currentUser?.name,acao,detalhes,dt:new Date().toISOString()});
+  DB.auditoria.push({id:Date.now(),usuario:currentUser?.name,acao,detalhes,dt:getLocalISODate()});
   saveDB();
+}
+
+let orderCheckInterval = null;
+
+function startPollingOrders() {
+  if (orderCheckInterval) clearInterval(orderCheckInterval);
+  orderCheckInterval = setInterval(checkPedidosDigitais, 15000);
+}
+
+async function checkPedidosDigitais() {
+  if (!GOOGLE_SHEETS_URL) return;
+  try {
+    const res = await fetch(GOOGLE_SHEETS_URL + '?action=get_pedidos');
+    const data = await res.json();
+    if(data && data.pedidos_novos && data.pedidos_novos.length > 0) {
+      let notify = false;
+      const idsRecebidos = [];
+      DB.mesas_abertas = DB.mesas_abertas || [];
+
+      data.pedidos_novos.forEach(ped => {
+        idsRecebidos.push(ped.id);
+        const idx = DB.mesas_abertas.findIndex(x => x.cliente.toLowerCase() === ped.cliente.toLowerCase());
+        
+        let obsStr = ped.obs ? `[APP] ${ped.obs}` : '[APP] Novo Pedido';
+
+        if(idx >= 0) {
+          const mesa = DB.mesas_abertas[idx];
+          ped.itens.forEach(ni => {
+            const ex = mesa.itens.find(mi => mi.id === ni.id);
+            if(ex) { ex.qtd += ni.qtd; } else { mesa.itens.push(ni); }
+          });
+          mesa.dtAtualizacao = ped.dtAtualizacao;
+          if(mesa.obs) mesa.obs += ' | ' + obsStr; else mesa.obs = obsStr;
+        } else {
+          DB.mesas_abertas.push({
+            cliente: ped.cliente,
+            obs: obsStr,
+            itens: ped.itens,
+            dtAtualizacao: ped.dtAtualizacao
+          });
+        }
+        notify = true;
+      });
+
+      if(notify) {
+         saveDB();
+         tocarSomNotificacao();
+         showToast(`🔔 Novo pedido recebido pelo Cardápio Digital!`, 'info');
+         if(currentPage === 'vendas' && document.getElementById('modalOverlay').classList.contains('open') && document.querySelector('.modal-title')?.textContent.includes('Mesas')) {
+             abrirModalMesas(); // auto-refresh se estiver aberto
+         }
+      }
+
+      if(idsRecebidos.length > 0) {
+         fetch(GOOGLE_SHEETS_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'marcar_pedidos_recebidos', ids: idsRecebidos }),
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+         });
+      }
+    }
+  } catch(e) {
+    console.error("Erro ao puxar pedidos digitais:", e);
+  }
+}
+
+function tocarSomNotificacao() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.1);
+    gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } catch(e) {}
 }
 
 // ===================== AUTH =====================
@@ -118,6 +199,7 @@ function doLogin(){
   buildSidebar();
   updateDate();
   setInterval(updateDate,60000);
+  startPollingOrders();
   navigate('dashboard');
   auditLog('LOGIN','Acesso ao sistema');
 }
@@ -125,6 +207,7 @@ function doLogin(){
 function doLogout(){
   auditLog('LOGOUT','Saiu do sistema');
   currentUser=null;
+  if(orderCheckInterval) clearInterval(orderCheckInterval);
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('app').style.display='none';
   document.getElementById('loginUser').value='';
@@ -243,7 +326,12 @@ function navigate(page){
 function fmt(v){return 'R$ '+parseFloat(v||0).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.')}
 function fmtDate(iso){return iso?new Date(iso).toLocaleDateString('pt-BR'):''}
 function fmtDT(iso){return iso?new Date(iso).toLocaleString('pt-BR'):''}
-function today(){return new Date().toISOString().slice(0,10)}
+function getLocalISODate() {
+  const d = new Date();
+  const tzOffset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tzOffset).toISOString().slice(0, -1);
+}
+function today(){return getLocalISODate().slice(0,10)}
 function uid(key){const id=DB.nextId[key]||1;DB.nextId[key]=id+1;return id}
 function escapeHTML(str){
   if(!str)return '';
@@ -377,6 +465,7 @@ function renderDashboard(){
 function gerarQRCodeMesa(){
   const mesas = [1,2,3,4,5,6,7,8,9,10];
   const currentUrl = window.location.href.split('index.html')[0] + 'cardapio.html';
+  const gsParam = GOOGLE_SHEETS_URL ? '&gs=' + encodeURIComponent(GOOGLE_SHEETS_URL) : '';
   
   openModal(`
     <div class="modal-title">📱 Gerar QR Code - Cardápio Digital</div>
@@ -390,7 +479,7 @@ function gerarQRCodeMesa(){
         <thead><tr><th>Mesa</th><th>Link Público</th><th>Ação</th></tr></thead>
         <tbody>
           ${mesas.map(m => {
-            const link = currentUrl + '?mesa=' + m;
+            const link = currentUrl + '?mesa=' + m + gsParam;
             return `
             <tr>
               <td><strong>Mesa ${m}</strong></td>
@@ -455,11 +544,8 @@ function renderVendas(){
             </select>
           </div>
           <div class="form-group" style="margin:0">
-            <label class="form-label">Pagamento</label>
-            <select class="form-control" id="vendaPag">
-              <option>Pix</option><option>Dinheiro</option>
-              <option>Cartão Débito</option><option>Cartão Crédito</option>
-            </select>
+            <label class="form-label">Status Receb.</label>
+            <div class="text-muted" style="padding-top:10px; font-size:13px;">Pagamento no Menu (Checkout)</div>
           </div>
         </div>
         <div class="form-group">
@@ -476,7 +562,7 @@ function renderVendas(){
         </div>
         <div class="flex" style="gap:8px; margin-top:15px">
           <button class="btn btn-ghost" style="flex:1; background:var(--surface2); color:var(--text1); padding:13px; font-size:14px" onclick="salvarMesaAberta()">⏳ Deixar em Aberto</button>
-          <button class="btn btn-primary" style="flex:1; padding:13px; font-size:14px" onclick="finalizarVenda()">✅ Finalizar e Cobrar</button>
+          <button class="btn btn-primary" style="flex:1; padding:13px; font-size:14px" onclick="prepararFechamento()">💳 Pagar e Finalizar</button>
         </div>
       </div>
     </div>
@@ -554,10 +640,149 @@ function changeQty(i,d){
 }
 function removeFromCart(i){cart.splice(i,1);updateCart();}
 
-function finalizarVenda(){
+function prepararFechamento() {
+  if (cart.length === 0) { showToast('Carrinho vazio!', 'error'); return; }
+  const total = cart.reduce((s,i) => s + i.preco * i.qtd, 0);
+
+  openModal(`
+    <style>
+      .split-input { width:60px; text-align:center; margin:0 10px; padding:5px; border-radius:5px; border:1px solid var(--border); background:var(--surface3); color:var(--text); font-weight:bold; }
+      .calc-result { color: var(--amber); font-weight:bold; font-size:18px; margin-top:5px; display:block; }
+      .misto-val { background: var(--surface) !important; color: var(--text) !important; }
+    </style>
+    <div class="modal-title">💳 Finalizar Pagamento</div>
+    
+    <div style="font-size:24px; font-weight:800; text-align:center; margin-bottom:15px; background:var(--surface2); padding:10px; border-radius:10px;">
+      Total: <span class="text-amber mono">${fmt(total)}</span>
+    </div>
+    
+    <div class="card mb-3" style="background:var(--surface2)">
+      <div style="font-weight:600; margin-bottom:10px;">👤 Dividir Conta (Balcão)</div>
+      <div style="display:flex; align-items:center;">
+        Pessoas: 
+        <button class="btn btn-ghost btn-sm" onclick="mudarSplit(-1)">-</button>
+        <input type="number" id="splitQtd" class="split-input" value="1" min="1" readonly>
+        <button class="btn btn-ghost btn-sm" onclick="mudarSplit(1)">+</button>
+      </div>
+      <span class="calc-result" id="splitResult">${fmt(total)} por pessoa</span>
+    </div>
+
+    <div class="card mb-3" style="background:var(--surface2)">
+      <div style="font-weight:600; margin-bottom:10px;">💰 Forma de Pagamento</div>
+      
+      <div class="form-group" style="margin:0;">
+        <select class="form-control mb-2" id="vendaPagModal" onchange="togglePagamentoMisto()">
+          <option value="Pix">Pix</option>
+          <option value="Dinheiro">Dinheiro</option>
+          <option value="Cartão Débito">Cartão Débito</option>
+          <option value="Cartão Crédito">Cartão Crédito</option>
+          <option value="Fiado/Pendente">Fiado (Anotado)</option>
+          <option value="Misto">Misto (Dividido em várias formas)</option>
+        </select>
+      </div>
+      
+      <div id="mistoContainer" style="display:none; margin-top:15px;">
+        <div class="form-row cols-2 mb-2">
+            <div>
+              <label class="form-label" style="font-size:11px">Pix</label>
+              <input type="number" step="0.01" class="form-control form-control-sm misto-val" id="mistoPix" placeholder="0.00" oninput="calcMisto()">
+            </div>
+            <div>
+              <label class="form-label" style="font-size:11px">Dinheiro</label>
+              <input type="number" step="0.01" class="form-control form-control-sm misto-val" id="mistoDinheiro" placeholder="0.00" oninput="calcMisto()">
+            </div>
+        </div>
+        <div class="form-row cols-2">
+            <div>
+              <label class="form-label" style="font-size:11px">C. Débito</label>
+              <input type="number" step="0.01" class="form-control form-control-sm misto-val" id="mistoDebito" placeholder="0.00" oninput="calcMisto()">
+            </div>
+            <div>
+              <label class="form-label" style="font-size:11px">C. Crédito</label>
+              <input type="number" step="0.01" class="form-control form-control-sm misto-val" id="mistoCredito" placeholder="0.00" oninput="calcMisto()">
+            </div>
+        </div>
+        <div style="text-align:right; margin-top:5px; font-size:14px;" id="mistoFalta">Falta: <span class="text-amber text-bold">${fmt(total)}</span></div>
+      </div>
+    </div>
+    
+    <div class="modal-footer" style="margin-top:20px;">
+       <button class="btn btn-ghost" onclick="closeModal()">Voltar</button>
+       <button class="btn btn-primary" onclick="finalizarVendaDoModal(${total})">✅ Confirmar Recebimento</button>
+    </div>
+  `);
+  
+  window.currentTotalFechamento = total;
+}
+
+window.mudarSplit = function(delta) {
+  const el = document.getElementById('splitQtd');
+  let val = parseInt(el.value) + delta;
+  if (val < 1) val = 1;
+  el.value = val;
+  const perPerson = window.currentTotalFechamento / val;
+  document.getElementById('splitResult').textContent = fmt(perPerson) + ' por pessoa';
+}
+
+window.togglePagamentoMisto = function() {
+  const pag = document.getElementById('vendaPagModal').value;
+  const c = document.getElementById('mistoContainer');
+  c.style.display = pag === 'Misto' ? 'block' : 'none';
+  if(pag === 'Misto') calcMisto();
+}
+
+window.calcMisto = function() {
+  const p = parseFloat(document.getElementById('mistoPix').value||0);
+  const d = parseFloat(document.getElementById('mistoDinheiro').value||0);
+  const c = parseFloat(document.getElementById('mistoCredito').value||0);
+  const b = parseFloat(document.getElementById('mistoDebito').value||0);
+  const sum = p + d + c + b;
+  const falta = window.currentTotalFechamento - sum;
+  const fEl = document.getElementById('mistoFalta');
+  if(falta > 0) {
+    fEl.innerHTML = `Falta: <span class="text-amber">` + fmt(Math.abs(falta)) + `</span>`;
+  } else if (falta < 0) {
+    fEl.innerHTML = `Troco a devolver: <span class="text-green text-bold" style="font-weight:bold;">` + fmt(Math.abs(falta)) + `</span>`;
+  } else {
+    fEl.innerHTML = `<span class="text-green text-bold" style="font-weight:bold;">Valor exato!</span>`;
+  }
+}
+
+function finalizarVendaDoModal(totalEsperado) {
+  const pag = document.getElementById('vendaPagModal').value;
+  let formatedPag = pag;
+  let mistoJson = null;
+
+  if (pag === 'Misto') {
+      const p = parseFloat(document.getElementById('mistoPix').value||0);
+      const d = parseFloat(document.getElementById('mistoDinheiro').value||0);
+      const c = parseFloat(document.getElementById('mistoCredito').value||0);
+      const b = parseFloat(document.getElementById('mistoDebito').value||0);
+      const sum = p + d + c + b;
+      
+      // permitimos passar com troco, mas se sum for menor que o esperado, avisa
+      if (sum < (totalEsperado - 0.05)) { // margem de erro
+         showToast('Cobre o valor total da mesa!', 'error');
+         return;
+      }
+      mistoJson = { pix: p, dinheiro: d, credito: c, debito: b, troco: (sum - totalEsperado) };
+      
+      const arrDesc = [];
+      if(p>0) arrDesc.push('Pix '+fmt(p));
+      if(d>0) arrDesc.push('Din '+fmt(d));
+      if(c>0) arrDesc.push('Cred '+fmt(c));
+      if(b>0) arrDesc.push('Deb '+fmt(b));
+      formatedPag = 'Misto (' + arrDesc.join(', ') + ')';
+  }
+
+  closeModal();
+  finalizarVenda(formatedPag, mistoJson);
+}
+
+function finalizarVenda(OverridePag, mistoJson){
   if(cart.length===0){showToast('Carrinho vazio!','error');return;}
   const tipo=document.getElementById('vendaTipo')?.value;
-  const pag=document.getElementById('vendaPag')?.value;
+  const pag=OverridePag || 'Não Informado';
   const obs=escapeHTML(document.getElementById('vendaObs')?.value);
   const cliente=escapeHTML(document.getElementById('vendaCliente')?.value);
   const total=cart.reduce((s,i)=>s+i.preco*i.qtd,0);
@@ -566,8 +791,10 @@ function finalizarVenda(){
     id:uid('venda'),data:today(),hora:new Date().toLocaleTimeString('pt-BR'),
     tipo,pagamento:pag,obs,total,custo,cliente,
     itens:cart.map(i=>({produtoId:i.produtoId,nome:i.nome,preco:i.preco,custo:i.custo,qtd:i.qtd,subtotal:i.preco*i.qtd})),
-    usuario:currentUser.name,dt:new Date().toISOString()
+    usuario:currentUser.name,dt:getLocalISODate(),
+    misto: mistoJson
   };
+
   // baixar estoque
   cart.forEach(item=>{
     const p=DB.produtos.find(x=>x.id===item.produtoId);
@@ -617,7 +844,7 @@ function salvarMesaAberta(){
     cliente: cliente,
     obs: obs,
     itens: JSON.parse(JSON.stringify(cart)), // clona os itens
-    dtAtualizacao: new Date().toISOString()
+    dtAtualizacao: getLocalISODate()
   };
   
   if(idx >= 0){
@@ -789,7 +1016,7 @@ function salvarProducao(){
   const obs=escapeHTML(document.getElementById('mpObs').value);
   if(!qtd){showToast('Informe a quantidade','error');return;}
   const p=DB.produtos.find(x=>x.id===pid);
-  const prod={id:uid('producao'),produtoId:pid,produto:p.nome,qtd,obs,data:today(),usuario:currentUser.name,dt:new Date().toISOString()};
+  const prod={id:uid('producao'),produtoId:pid,produto:p.nome,qtd,obs,data:today(),usuario:currentUser.name,dt:getLocalISODate()};
   DB.producoes.push(prod);
   p.estoque+=qtd;
   saveDB();
@@ -866,7 +1093,7 @@ function salvarConsumo(){
   if(['Perda','Quebra','Vencimento'].includes(motivo)){
     if(!confirm(`Confirma o registro de ${qtd} un de ${p.nome} como ${motivo}? Isso baixa o estoque e representa prejuízo.`)) return;
   }
-  const c={id:uid('consumo'),produtoId:pid,produto:p.nome,qtd,motivo,obs,operacao:p.operacao,data:today(),usuario:currentUser.name,dt:new Date().toISOString()};
+  const c={id:uid('consumo'),produtoId:pid,produto:p.nome,qtd,motivo,obs,operacao:p.operacao,data:today(),usuario:currentUser.name,dt:getLocalISODate()};
   DB.consumos.push(c);
   p.estoque=Math.max(0,p.estoque-qtd);
   saveDB();
@@ -1037,7 +1264,7 @@ function salvarCompra(){
   const pag=document.getElementById('cpPag').value;
   const obs=escapeHTML(document.getElementById('cpObs').value);
   const total=compraItens.reduce((s,i)=>s+i.total,0);
-  const compra={id:uid('compra'),fornecedor:fornec,data,operacao:op,pagamento:pag,obs,total,itens:compraItens,usuario:currentUser.name,dt:new Date().toISOString()};
+  const compra={id:uid('compra'),fornecedor:fornec,data,operacao:op,pagamento:pag,obs,total,itens:compraItens,usuario:currentUser.name,dt:getLocalISODate()};
   // atualizar estoque e custo
   compraItens.forEach(item=>{
     const p=DB.produtos.find(x=>x.id===item.produtoId);
@@ -1490,7 +1717,7 @@ function exportarBackup(){
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(DB));
   const downloadAnchorNode = document.createElement('a');
   downloadAnchorNode.setAttribute("href", dataStr);
-  downloadAnchorNode.setAttribute("download", "conveniencia_oliveira_backup_" + new Date().toISOString().slice(0,10) + ".json");
+  downloadAnchorNode.setAttribute("download", "conveniencia_oliveira_backup_" + getLocalISODate().slice(0,10) + ".json");
   document.body.appendChild(downloadAnchorNode);
   downloadAnchorNode.click();
   downloadAnchorNode.remove();

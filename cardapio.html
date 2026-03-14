@@ -213,8 +213,12 @@
     <div class="menu-header">
         <img src="img/logo.jpg" alt="Logo" style="width:100px; height:100px; object-fit: cover; border-radius: 50%; border: 3px solid #f59e0b; margin: 0 auto 12px; display: block; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
         <div class="menu-logo" style="justify-content:center;">Conveniência Oliveira</div>
-        <div class="menu-subtitle" style="text-align:center;">Cardápio Digital &bull; Peça direto da mesa</div>
+        <div class="menu-subtitle" style="text-align:center; color:var(--text3); font-size:14px; margin-bottom:8px;">Cardápio Digital &bull; Peça direto da mesa</div>
         <div id="mesaDisplay" class="menu-mesa">Carregando...</div>
+        
+        <div style="margin-top: 20px; max-width: 400px; margin-left: auto; margin-right: auto;">
+            <input type="text" placeholder="🔍 Buscar produto ou bebida..." onkeyup="filtrarCardapio(this.value)" style="width: 100%; padding: 12px 20px; border-radius: 25px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: var(--text); font-family: 'Inter', sans-serif; font-size: 15px; outline: none; box-sizing: border-box; text-align: center;">
+        </div>
     </div>
 
     <div class="menu-container" id="menuContainer">
@@ -244,11 +248,14 @@
             </div>
             
             <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border)">
-                <div style="display:flex; justify-content:space-between; font-size: 18px; font-weight: 600">
+                <div style="display:flex; justify-content:space-between; font-size: 18px; font-weight: 600; margin-bottom: 5px;">
                     <span>Total a pagar:</span>
                     <span id="modalTotalTxt" class="text-amber">R$ 0,00</span>
                 </div>
-                <button class="btn-send-order" onclick="sendOrderToWhatsApp()">📲 Enviar Pedido (WhatsApp)</button>
+                <div style="margin-bottom: 12px;">
+                    <input type="text" id="pedidoObs" placeholder="Alguma observação? (ex: sem gelo)" style="width:100%; border:1px solid var(--border); background:var(--surface2); padding:10px; border-radius:12px; color:var(--text);">
+                </div>
+                <button class="btn-send-order" id="btnSendOrder" onclick="sendOrderToSystem()">🍽️ Confirmar Pedido</button>
             </div>
         </div>
     </div>
@@ -260,6 +267,8 @@
 // ==================== LÓGICA DO CARDÁPIO ====================
 let clientCart = [];
 let mesaNumber = 'Balcão';
+let GOOGLE_SHEETS_URL = '';
+window.allProducts = [];
 
 function fmt(v){return 'R$ '+parseFloat(v||0).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.')}
 
@@ -272,26 +281,54 @@ function showToast(msg, type='success'){
 }
 
 // Inicializar carregando os dados do LocalStorage (num app real, viria via Fetch da API)
-function initMenu() {
-    // Pegar o número da mesa via URL parameter (ex: cardapio.html?mesa=5)
+async function initMenu() {
+    // Pegar o número da mesa via URL parameter (ex: cardapio.html?mesa=5&gs=...)
     const urlParams = new URLSearchParams(window.location.search);
     if(urlParams.has('mesa')) {
         mesaNumber = 'Mesa ' + urlParams.get('mesa');
     }
+    if(urlParams.has('gs')) {
+        GOOGLE_SHEETS_URL = decodeURIComponent(urlParams.get('gs'));
+    }
     document.getElementById('mesaDisplay').textContent = mesaNumber;
 
-    const dbString = localStorage.getItem('convpro_db');
-    if (!dbString) {
-        document.getElementById('menuContainer').innerHTML = `
-            <div class="empty-state">
-                <div class="icon">🛒</div>
-                <div style="margin-top: 10px; font-size: 16px">Sistema offline ou sem produtos cadastrados.</div>
-            </div>`;
-        return;
+    let produtos = [];
+
+    if (GOOGLE_SHEETS_URL) {
+        document.getElementById('menuContainer').innerHTML = `<div style="text-align:center; padding: 40px; color: var(--text3)">Baixando cardápio atualizado...</div>`;
+        try {
+            const res = await fetch(GOOGLE_SHEETS_URL + '?action=carregar_cardapio');
+            const data = await res.json();
+            produtos = data.produtos.filter(p => p.status === 'ativo');
+        } catch(e) {
+            console.error('Erro ao buscar dados da nuvem', e);
+            showToast('Erro ao carregar cardápio da nuvem. Sincronizando dados locais...', 'error');
+        }
     }
 
-    const DB = JSON.parse(dbString);
-    const produtos = DB.produtos.filter(p => p.status === 'ativo');
+    if(produtos.length === 0) {
+        const dbString = localStorage.getItem('convpro_db');
+        if (!dbString) {
+            document.getElementById('menuContainer').innerHTML = `
+                <div class="empty-state">
+                    <div class="icon">🛒</div>
+                    <div style="margin-top: 10px; font-size: 16px">Sistema offline ou sem produtos cadastrados.</div>
+                </div>`;
+            return;
+        }
+        const DB = JSON.parse(dbString);
+        produtos = DB.produtos.filter(p => p.status === 'ativo');
+    }
+
+    window.allProducts = produtos;
+    renderCategories(produtos);
+}
+
+function renderCategories(produtos) {
+    if(produtos.length === 0) {
+        document.getElementById('menuContainer').innerHTML = '<div style="text-align:center; padding:40px; color:var(--text3)">Nenhum produto encontrado.</div>';
+        return;
+    }
 
     // Agrupar por Categoria
     const categoriasBase = {};
@@ -302,9 +339,7 @@ function initMenu() {
 
     let html = '';
     
-    // Renderizar HTML por categoria
     for (const [catName, prods] of Object.entries(categoriasBase)) {
-        // Decide ícone por nome de categoria (heurística simples)
         let icon = '🛒';
         if(catName.toLowerCase().includes('espetinho')) icon = '🔥';
         if(catName.toLowerCase().includes('bebida') || catName.toLowerCase().includes('cerveja') || catName.toLowerCase().includes('refrigerante')) icon = '🍺';
@@ -325,6 +360,16 @@ function initMenu() {
     }
 
     document.getElementById('menuContainer').innerHTML = html;
+}
+
+function filtrarCardapio(termo) {
+    const t = termo.toLowerCase().trim();
+    if(!t) {
+        renderCategories(window.allProducts);
+        return;
+    }
+    const filtrados = window.allProducts.filter(p => p.nome.toLowerCase().includes(t) || p.categoria.toLowerCase().includes(t));
+    renderCategories(filtrados);
 }
 
 // ==================== CARRINHO DO CLIENTE ====================
@@ -408,13 +453,64 @@ function modifyQty(index, delta) {
 }
 
 // ==================== FECHAR PEDIDO (INTEGRAÇÃO WHATSAPP) ====================
-function sendOrderToWhatsApp() {
+async function sendOrderToSystem() {
+    if (clientCart.length === 0) return;
+    
+    const obsVal = document.getElementById('pedidoObs').value || '';
+
+    const btn = document.getElementById('btnSendOrder');
+    const oldText = btn.innerHTML;
+    btn.innerHTML = '⏳ Enviando para o Caixa...';
+    btn.disabled = true;
+
+    if (GOOGLE_SHEETS_URL) {
+        try {
+            const d = new Date();
+            const localIso = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, -1);
+            
+            const pedido = {
+                cliente: mesaNumber,
+                dtAtualizacao: localIso,
+                obs: obsVal,
+                itens: clientCart
+            };
+            
+            await fetch(GOOGLE_SHEETS_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'novo_pedido', pedido }),
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+            });
+            
+            showToast('Pedido recebido no Caixa!', 'success');
+            
+            clientCart = [];
+            document.getElementById('pedidoObs').value = '';
+            updateFloatingCart();
+            closeClientCart();
+            
+            btn.innerHTML = oldText;
+            btn.disabled = false;
+            return;
+        } catch(e) {
+            console.error(e);
+            showToast('Erro de conexão, usando WhatsApp...', 'error');
+        }
+    }
+    
+    // Fallback para envio manual (WhatsApp) se não tiver URL configurada ou erro
+    sendOrderToWhatsApp(obsVal);
+    btn.innerHTML = oldText;
+    btn.disabled = false;
+}
+
+function sendOrderToWhatsApp(obs) {
     if (clientCart.length === 0) return;
     
     // Substitua pelo número do WhatsApp do Estabelecimento
-    const PHONE_NUMBER = "5511999999999"; 
+    const PHONE_NUMBER = "55839969912439"; 
     
     let text = `*Novo Pedido - ${mesaNumber}*%0A%0A`;
+    if(obs) { text += `_Obs: ${obs}_%0A%0A`; }
     
     let total = 0;
     clientCart.forEach(item => {
