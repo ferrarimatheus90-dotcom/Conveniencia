@@ -1,3 +1,26 @@
+// ===================== THEME =====================
+let currentTheme = localStorage.getItem('convpro_theme') || 'dark';
+if(currentTheme === 'light') document.documentElement.classList.add('light-mode');
+
+window.toggleTheme = function() {
+  const isLight = document.documentElement.classList.toggle('light-mode');
+  currentTheme = isLight ? 'light' : 'dark';
+  localStorage.setItem('convpro_theme', currentTheme);
+  
+  const icon = isLight ? '🌙' : '☀️';
+  const btn = document.getElementById('btnThemeToggle');
+  if (btn) btn.innerHTML = icon;
+  const btnLogin = document.getElementById('btnThemeToggleLogin');
+  if (btnLogin) btnLogin.innerHTML = icon;
+}
+window.addEventListener('DOMContentLoaded', () => {
+  const icon = currentTheme === 'light' ? '🌙' : '☀️';
+  const btn = document.getElementById('btnThemeToggle');
+  if (btn) btn.innerHTML = icon;
+  const btnLogin = document.getElementById('btnThemeToggleLogin');
+  if (btnLogin) btnLogin.innerHTML = icon;
+});
+
 const USERS = [
   {id:0,username:'dev',password:'dev@2026',role:'dev',name:'Desenvolvedor'},
   {id:1,username:'admin',password:'Conveniencia@2005#',role:'admin',name:'Administrador'},
@@ -1203,8 +1226,8 @@ function renderCaixa(){
 
   return `
   <div class="flex items-center justify-between mb-4">
-    <h2 style="font-family:'Syne',sans-serif;font-size:20px">🏦 Fechamento – ${new Date().toLocaleDateString('pt-BR')}</h2>
-    <button class="btn btn-primary" onclick="imprimirCaixa()">🖨️ Imprimir</button>
+    <h2 style="font-family:'Syne',sans-serif;font-size:20px">Fechamento – ${new Date().toLocaleDateString('pt-BR')}</h2>
+    <button class="btn btn-primary" onclick="imprimirCaixa()">Imprimir</button>
   </div>
 
   <div class="grid-2 mb-4">
@@ -1228,14 +1251,14 @@ function renderCaixa(){
 
   <div class="grid-2 mb-4">
     <div class="card">
-      <div class="card-title">💳 Por Forma de Pagamento</div>
+      <div class="card-title">Por Forma de Pagamento</div>
       ${Object.entries(pagMap).map(([k,v])=>`
         <div class="flex justify-between mb-2">
           <span>${k}</span><span class="mono text-amber">${fmt(v)}</span>
         </div>`).join('')}
     </div>
     <div class="card">
-      <div class="card-title">📦 Itens Vendidos</div>
+      <div class="card-title">Itens Vendidos</div>
       ${rank.slice(0,8).map(([n,q])=>`
         <div class="flex justify-between mb-2">
           <span style="font-size:13px">${n}</span><span class="badge amber">${q} un</span>
@@ -1245,7 +1268,7 @@ function renderCaixa(){
 
   <div class="card">
     <div class="flex justify-between items-center mb-3">
-      <div class="card-title" style="margin:0">📊 Resumo Geral</div>
+      <div class="card-title" style="margin:0">Resumo Geral</div>
     </div>
     <div class="grid-3">
       <div><div class="stat-label">Total Vendido</div><div class="stat-value text-amber">${fmt(totalGeral)}</div></div>
@@ -1307,7 +1330,7 @@ function renderRelatorios(){
       <option value="mes">Este Mês</option>
       <option value="todos">Tudo</option>
     </select>
-    <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimir</button>
+    <button class="btn btn-ghost" onclick="window.print()">Imprimir</button>
   </div>
 
   <div class="grid-3 mb-4">
@@ -1318,14 +1341,14 @@ function renderRelatorios(){
 
   <div class="grid-2 mb-4">
     <div class="card">
-      <div class="card-title">📍 Por Tipo de Venda</div>
+      <div class="card-title">Por Tipo de Venda</div>
       ${Object.entries(tipoMap).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`
         <div class="flex justify-between mb-2">
           <span>${k}</span><span class="mono text-amber">${fmt(v)}</span>
         </div>`).join('') || '<div class="text-muted">Sem dados</div>'}
     </div>
     <div class="card">
-      <div class="card-title">💳 Por Pagamento</div>
+      <div class="card-title">Por Pagamento</div>
       ${Object.entries(pagMap2).map(([k,v])=>`
         <div class="flex justify-between mb-2">
           <span>${k}</span><span class="mono text-blue">${fmt(v)}</span>
@@ -1335,24 +1358,24 @@ function renderRelatorios(){
 
   <div class="grid-2 mb-4">
     <div class="card">
-      <div class="card-title">🏆 Ranking de Produtos</div>
+      <div class="card-title">Ranking de Produtos</div>
       ${Object.entries(rankAll).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([n,q],i)=>`
         <div class="flex justify-between mb-2">
           <span style="font-size:13px">${i+1}. ${n}</span><span class="badge ${i===0?'amber':i===1?'blue':'green'}">${q} un</span>
         </div>`).join('') || '<div class="text-muted">Sem dados</div>'}
     </div>
     <div class="card">
-      <div class="card-title">🧾 Investimento em Compras</div>
+      <div class="card-title">Investimento em Compras</div>
       <div class="flex justify-between mb-2"><span>Total Geral</span><span class="mono text-amber">${fmt(totalCompras)}</span></div>
-      <div class="flex justify-between mb-2"><span>🔥 Espetinho</span><span class="mono text-op1">${fmt(comprasEsp)}</span></div>
-      <div class="flex justify-between mb-2"><span>🍺 Bebidas</span><span class="mono text-blue">${fmt(comprasBeb)}</span></div>
+      <div class="flex justify-between mb-2"><span>Espetinho</span><span class="mono text-op1">${fmt(comprasEsp)}</span></div>
+      <div class="flex justify-between mb-2"><span>Bebidas</span><span class="mono text-blue">${fmt(comprasBeb)}</span></div>
       <div class="divider"></div>
       <div class="flex justify-between"><span class="text-muted">Nº de compras</span><span class="mono">${DB.compras.length}</span></div>
     </div>
   </div>
 
   <div class="card mb-4">
-    <div class="card-title">📋 Consumo Interno</div>
+    <div class="card-title">Consumo Interno</div>
     ${DB.consumos.length===0?'<div class="text-muted">Nenhum registro</div>':
     `<div class="table-wrap"><table>
       <thead><tr><th>Data</th><th>Produto</th><th>Qtd</th><th>Motivo</th></tr></thead>

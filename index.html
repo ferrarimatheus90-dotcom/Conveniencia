@@ -11,6 +11,7 @@
 
 <!-- LOGIN -->
 <div id="loginScreen">
+  <button class="btn btn-ghost btn-sm" id="btnThemeToggleLogin" onclick="toggleTheme()" style="position:absolute; top:20px; right:20px; border-color:transparent; font-size:18px; " title="Alternar Tema">☀️</button>
   <div class="login-card" style="text-align:center;">
     <img src="img/logo.jpg" alt="Conveniência Oliveira" style="width:160px; border-radius:12px; margin: 0 auto 12px; display:block; box-shadow:0 4px 15px rgba(0,0,0,0.5); object-fit: cover;">
     <div class="login-logo" style="justify-content:center;">Conveniência Oliveira</div>
@@ -53,6 +54,7 @@
       </div>
       <div class="topbar-title" id="topbarTitle">Dashboard</div>
       
+      <button class="btn btn-ghost btn-sm" id="btnThemeToggle" onclick="toggleTheme()" style="margin-right:10px; border-color:var(--border);" title="Alternar Tema">☀️</button>
       <button class="btn btn-ghost btn-sm" id="btnSyncCloud" onclick="forceSync()" style="margin-right:10px; border-color:var(--border);" title="Enviar base de dados para nuvem">☁️ Sincronizar</button>
       
       <div class="topbar-badge mono" id="topbarDate"></div>
