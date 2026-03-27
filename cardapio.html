@@ -248,12 +248,19 @@
             </div>
             
             <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border)">
-                <div style="display:flex; justify-content:space-between; font-size: 18px; font-weight: 600; margin-bottom: 5px;">
+                <div style="display:flex; justify-content:space-between; font-size: 18px; font-weight: 600; margin-bottom: 12px;">
                     <span>Total a pagar:</span>
                     <span id="modalTotalTxt" class="text-amber">R$ 0,00</span>
                 </div>
+                <div style="margin-bottom: 10px;">
+                    <div style="position:relative;">
+                        <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); font-size:16px;">👤</span>
+                        <input type="text" id="pedidoNome" placeholder="Seu nome (obrigatório)" style="width:100%; border:1px solid var(--border); background:var(--surface2); padding:11px 10px 11px 38px; border-radius:12px; color:var(--text); font-size:15px; box-sizing:border-box;">
+                    </div>
+                    <div id="nomeError" style="color:#ef4444; font-size:12px; margin-top:4px; display:none;">⚠️ Por favor, informe seu nome</div>
+                </div>
                 <div style="margin-bottom: 12px;">
-                    <input type="text" id="pedidoObs" placeholder="Alguma observação? (ex: sem gelo)" style="width:100%; border:1px solid var(--border); background:var(--surface2); padding:10px; border-radius:12px; color:var(--text);">
+                    <input type="text" id="pedidoObs" placeholder="Alguma observação? (ex: sem gelo)" style="width:100%; border:1px solid var(--border); background:var(--surface2); padding:10px; border-radius:12px; color:var(--text); box-sizing:border-box;">
                 </div>
                 <button class="btn-send-order" id="btnSendOrder" onclick="sendOrderToSystem()">🍽️ Confirmar Pedido</button>
             </div>
@@ -452,24 +459,77 @@ function modifyQty(index, delta) {
     updateFloatingCart();
 }
 
-// ==================== FECHAR PEDIDO (INTEGRAÇÃO WHATSAPP) ====================
+// ==================== FECHAR PEDIDO (INTEGRAÇÃO WHATSAPP + SININHO) ====================
+const WHATSAPP_PHONE = "5583996912439";
+
+function buildWhatsAppMessage(nomeCliente, obs) {
+    const hora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+    let text = `🔔 *NOVO PEDIDO - ${mesaNumber}*\n`;
+    text += `👤 *Cliente: ${nomeCliente}*\n`;
+    text += `🕐 ${hora}\n`;
+    text += `━━━━━━━━━━━━━━━━\n\n`;
+
+    let total = 0;
+    clientCart.forEach(item => {
+        const sub = item.preco * item.qtd;
+        total += sub;
+        text += `▸ ${item.qtd}x ${item.nome}  ➜  ${fmt(sub)}\n`;
+    });
+
+    text += `\n━━━━━━━━━━━━━━━━\n`;
+    text += `💰 *TOTAL: ${fmt(total)}*\n`;
+    
+    if(obs && obs.trim()) {
+        text += `\n📝 _Obs: ${obs}_\n`;
+    }
+
+    text += `\n✅ Pode preparar! Obrigado 🙏`;
+    return text;
+}
+
+function sendToWhatsApp(nomeCliente, obs) {
+    const text = buildWhatsAppMessage(nomeCliente, obs);
+    const encoded = encodeURIComponent(text);
+    window.open(`https://api.whatsapp.com/send/?phone=${WHATSAPP_PHONE}&text=${encoded}&type=phone_number&app_absent=0`, '_blank');
+}
+
 async function sendOrderToSystem() {
     if (clientCart.length === 0) return;
+    
+    // Validar nome obrigatório
+    const nomeVal = (document.getElementById('pedidoNome').value || '').trim();
+    const nomeError = document.getElementById('nomeError');
+    const nomeInput = document.getElementById('pedidoNome');
+    
+    if (!nomeVal) {
+        nomeError.style.display = 'block';
+        nomeInput.style.borderColor = '#ef4444';
+        nomeInput.focus();
+        nomeInput.addEventListener('input', function handler() {
+            if (nomeInput.value.trim()) {
+                nomeError.style.display = 'none';
+                nomeInput.style.borderColor = 'var(--border)';
+                nomeInput.removeEventListener('input', handler);
+            }
+        });
+        return;
+    }
     
     const obsVal = document.getElementById('pedidoObs').value || '';
 
     const btn = document.getElementById('btnSendOrder');
     const oldText = btn.innerHTML;
-    btn.innerHTML = '⏳ Enviando para o Caixa...';
+    btn.innerHTML = '⏳ Enviando pedido...';
     btn.disabled = true;
 
+    // 1) Salvar no Google Sheets (para o sininho pegar)
     if (GOOGLE_SHEETS_URL) {
         try {
             const d = new Date();
             const localIso = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, -1);
             
             const pedido = {
-                cliente: mesaNumber,
+                cliente: mesaNumber + ' — ' + nomeVal,
                 dtAtualizacao: localIso,
                 obs: obsVal,
                 itens: clientCart
@@ -480,50 +540,25 @@ async function sendOrderToSystem() {
                 body: JSON.stringify({ action: 'novo_pedido', pedido }),
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' }
             });
-            
-            showToast('Pedido recebido no Caixa!', 'success');
-            
-            clientCart = [];
-            document.getElementById('pedidoObs').value = '';
-            updateFloatingCart();
-            closeClientCart();
-            
-            btn.innerHTML = oldText;
-            btn.disabled = false;
-            return;
         } catch(e) {
-            console.error(e);
-            showToast('Erro de conexão, usando WhatsApp...', 'error');
+            console.error('Erro ao salvar na planilha:', e);
         }
     }
+
+    // 2) SEMPRE enviar pelo WhatsApp também
+    sendToWhatsApp(nomeVal, obsVal);
+
+    // 3) Feedback e limpar carrinho
+    showToast('✅ Pedido enviado com sucesso!', 'success');
     
-    // Fallback para envio manual (WhatsApp) se não tiver URL configurada ou erro
-    sendOrderToWhatsApp(obsVal);
+    clientCart = [];
+    document.getElementById('pedidoNome').value = '';
+    document.getElementById('pedidoObs').value = '';
+    updateFloatingCart();
+    closeClientCart();
+    
     btn.innerHTML = oldText;
     btn.disabled = false;
-}
-
-function sendOrderToWhatsApp(obs) {
-    if (clientCart.length === 0) return;
-    
-    // Substitua pelo número do WhatsApp do Estabelecimento
-    const PHONE_NUMBER = "55839969912439"; 
-    
-    let text = `*Novo Pedido - ${mesaNumber}*%0A%0A`;
-    if(obs) { text += `_Obs: ${obs}_%0A%0A`; }
-    
-    let total = 0;
-    clientCart.forEach(item => {
-        const sub = item.preco * item.qtd;
-        total += sub;
-        text += `• ${item.qtd}x ${item.nome} - ${fmt(sub)}%0A`;
-    });
-    
-    text += `%0A*Total: ${fmt(total)}*%0A%0A`;
-    text += `Pode preparar o pedido, por favor!`;
-
-    // Abre o WhatsApp com o texto pré-preenchido
-    window.open(`https://wa.me/${PHONE_NUMBER}?text=${text}`, '_blank');
 }
 
 // Inicializar ao carregar

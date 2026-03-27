@@ -21,6 +21,10 @@
     <input class="login-input" id="loginUser" type="text" placeholder="seu usuário" autocomplete="username">
     <label class="login-label">Senha</label>
     <input class="login-input" id="loginPass" type="password" placeholder="••••••" autocomplete="current-password">
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:15px; justify-content:flex-start;">
+      <input type="checkbox" id="loginRemember" style="cursor:pointer;" checked>
+      <label for="loginRemember" style="margin:0; font-size:13px; color:var(--text2); cursor:pointer;">Lembrar senha</label>
+    </div>
     <div class="login-error" id="loginError">Usuário ou senha incorretos.</div>
     <button class="login-btn" onclick="doLogin()">Entrar</button>
   </div>
@@ -54,6 +58,12 @@
       </div>
       <div class="topbar-title" id="topbarTitle">Dashboard</div>
       
+      <!-- NOTIFICATION BELL -->
+      <button class="notif-bell" id="btnNotifBell" onclick="toggleNotifPanel()" title="Notificações de Pedidos">
+        🔔
+        <span class="notif-badge" id="notifBadge" style="display:none">0</span>
+      </button>
+
       <button class="btn btn-ghost btn-sm" id="btnThemeToggle" onclick="toggleTheme()" style="margin-right:10px; border-color:var(--border);" title="Alternar Tema">☀️</button>
       <button class="btn btn-ghost btn-sm" id="btnSyncCloud" onclick="forceSync()" style="margin-right:10px; border-color:var(--border);" title="Enviar base de dados para nuvem">☁️ Sincronizar</button>
       
@@ -62,6 +72,21 @@
     <div class="content" id="content"></div>
   </div>
 </div>
+
+<!-- NOTIFICATION PANEL -->
+<div class="notif-panel-overlay" id="notifPanelOverlay" onclick="closeNotifPanel()"></div>
+<div class="notif-panel" id="notifPanel">
+  <div class="notif-panel-header">
+    <div class="notif-panel-title">🔔 Pedidos Recebidos</div>
+    <button class="btn btn-sm btn-ghost" onclick="clearAllNotifications()" title="Limpar tudo">Limpar</button>
+  </div>
+  <div class="notif-panel-list" id="notifPanelList">
+    <div class="notif-empty">Nenhum pedido pendente</div>
+  </div>
+</div>
+
+<!-- FLASH OVERLAY (pulsa na tela quando chega pedido) -->
+<div class="order-flash-overlay" id="orderFlashOverlay"></div>
 
 <!-- TOASTS -->
 <div class="toast-container" id="toastContainer"></div>

@@ -19,6 +19,16 @@ window.addEventListener('DOMContentLoaded', () => {
   if (btn) btn.innerHTML = icon;
   const btnLogin = document.getElementById('btnThemeToggleLogin');
   if (btnLogin) btnLogin.innerHTML = icon;
+
+  const savedLogin = localStorage.getItem('convpro_savedLogin');
+  if (savedLogin) {
+    try {
+      const data = JSON.parse(savedLogin);
+      if (document.getElementById('loginUser')) document.getElementById('loginUser').value = data.u || '';
+      if (document.getElementById('loginPass')) document.getElementById('loginPass').value = data.p || '';
+      if (document.getElementById('loginRemember')) document.getElementById('loginRemember').checked = true;
+    } catch(e) {}
+  }
 });
 
 const USERS = [
@@ -105,10 +115,18 @@ function auditLog(acao,detalhes){
 }
 
 let orderCheckInterval = null;
+let orderNotifications = []; // fila de notificações
 
 function startPollingOrders() {
   if (orderCheckInterval) clearInterval(orderCheckInterval);
   orderCheckInterval = setInterval(checkPedidosDigitais, 15000);
+  requestNotificationPermission();
+}
+
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
 }
 
 async function checkPedidosDigitais() {
@@ -143,15 +161,27 @@ async function checkPedidosDigitais() {
             dtAtualizacao: ped.dtAtualizacao
           });
         }
+
+        // Adicionar à fila de notificações
+        let totalPed = 0;
+        ped.itens.forEach(i => totalPed += (i.preco || 0) * (i.qtd || 1));
+        orderNotifications.unshift({
+          id: ped.id,
+          mesa: ped.cliente,
+          itens: ped.itens,
+          obs: ped.obs || '',
+          total: totalPed,
+          dt: ped.dtAtualizacao || new Date().toISOString(),
+          unread: true
+        });
         notify = true;
       });
 
       if(notify) {
          saveDB();
-         tocarSomNotificacao();
-         showToast(`🔔 Novo pedido recebido pelo Cardápio Digital!`, 'info');
+         dispararAlertaPedido(data.pedidos_novos);
          if(currentPage === 'vendas' && document.getElementById('modalOverlay').classList.contains('open') && document.querySelector('.modal-title')?.textContent.includes('Mesas')) {
-             abrirModalMesas(); // auto-refresh se estiver aberto
+             abrirModalMesas();
          }
       }
 
@@ -168,29 +198,240 @@ async function checkPedidosDigitais() {
   }
 }
 
-function tocarSomNotificacao() {
+// ==================== SISTEMA DE ALERTA COMPLETO ====================
+
+function dispararAlertaPedido(pedidos) {
+  // 1. Som forte (4 bips agudos)
+  tocarSomNotificacaoForte();
+
+  // 2. Flash visual na tela
+  triggerOrderFlash();
+
+  // 3. Atualizar badge e sininho
+  updateNotifBadge();
+
+  // 4. Toast especial grande
+  const qtdPed = pedidos.length;
+  const mesas = pedidos.map(p => p.cliente).join(', ');
+  showOrderToast(`🔔 ${qtdPed} novo(s) pedido(s)!`, `Mesa: ${mesas} — Clique no sininho para ver detalhes`);
+
+  // 5. Notificação nativa do navegador
+  sendBrowserNotification(pedidos);
+
+  // 6. Mudar título da aba para chamar atenção
+  flashTabTitle(pedidos.length);
+}
+
+function tocarSomNotificacaoForte() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.1);
-    gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-    osc.connect(gainNode);
-    gainNode.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.4);
+    const notes = [880, 1100, 880, 1100]; // 4 bips alternados
+    const noteDuration = 0.12;
+    const noteGap = 0.08;
+    
+    notes.forEach((freq, i) => {
+      const startTime = ctx.currentTime + i * (noteDuration + noteGap);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freq, startTime);
+      gain.gain.setValueAtTime(0.4, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, startTime + noteDuration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(startTime);
+      osc.stop(startTime + noteDuration + 0.02);
+    });
+
+    // Segundo round de bips depois de 1 segundo (para insistir)
+    setTimeout(() => {
+      try {
+        const ctx2 = new (window.AudioContext || window.webkitAudioContext)();
+        notes.forEach((freq, i) => {
+          const startTime = ctx2.currentTime + i * (noteDuration + noteGap);
+          const osc = ctx2.createOscillator();
+          const gain = ctx2.createGain();
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(freq, startTime);
+          gain.gain.setValueAtTime(0.35, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, startTime + noteDuration);
+          osc.connect(gain);
+          gain.connect(ctx2.destination);
+          osc.start(startTime);
+          osc.stop(startTime + noteDuration + 0.02);
+        });
+      } catch(e){}
+    }, 1200);
   } catch(e) {}
+}
+
+function triggerOrderFlash() {
+  const el = document.getElementById('orderFlashOverlay');
+  if (!el) return;
+  el.classList.remove('active');
+  void el.offsetWidth; // force reflow
+  el.classList.add('active');
+  setTimeout(() => el.classList.remove('active'), 2500);
+}
+
+function showOrderToast(title, sub) {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = 'toast order-toast';
+  div.innerHTML = `<div>${title}</div><div class="toast-sub">${sub}</div>`;
+  div.onclick = () => { div.remove(); toggleNotifPanel(); };
+  div.style.cursor = 'pointer';
+  container.appendChild(div);
+  setTimeout(() => { if(div.parentNode) div.remove(); }, 8000);
+}
+
+function sendBrowserNotification(pedidos) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const qtd = pedidos.length;
+    const mesas = pedidos.map(p => p.cliente).join(', ');
+    const n = new Notification('🔔 Novo Pedido - Conveniência', {
+      body: `${qtd} pedido(s) recebido(s)\nMesa: ${mesas}`,
+      icon: '🛒',
+      tag: 'order-notif',
+      requireInteraction: true
+    });
+    n.onclick = () => {
+      window.focus();
+      toggleNotifPanel();
+      n.close();
+    };
+  } catch(e) {}
+}
+
+let tabFlashInterval = null;
+const originalTitle = document.title;
+
+function flashTabTitle(count) {
+  if (tabFlashInterval) clearInterval(tabFlashInterval);
+  let isAlt = false;
+  tabFlashInterval = setInterval(() => {
+    document.title = isAlt ? `🔔 (${count}) NOVO PEDIDO!` : originalTitle;
+    isAlt = !isAlt;
+  }, 800);
+  
+  // Para de piscar quando o usuário focar na aba
+  const stopFlash = () => {
+    if (tabFlashInterval) clearInterval(tabFlashInterval);
+    tabFlashInterval = null;
+    document.title = originalTitle;
+    window.removeEventListener('focus', stopFlash);
+  };
+  window.addEventListener('focus', stopFlash);
+  
+  // Para depois de 30 segundos de qualquer forma
+  setTimeout(() => {
+    if (tabFlashInterval) {
+      clearInterval(tabFlashInterval);
+      tabFlashInterval = null;
+      document.title = originalTitle;
+    }
+  }, 30000);
+}
+
+// ==================== PAINEL DE NOTIFICAÇÕES ====================
+
+function updateNotifBadge() {
+  const badge = document.getElementById('notifBadge');
+  const bell = document.getElementById('btnNotifBell');
+  const unreadCount = orderNotifications.filter(n => n.unread).length;
+  
+  if (unreadCount > 0) {
+    badge.textContent = unreadCount;
+    badge.style.display = 'flex';
+    bell.classList.add('has-notif');
+  } else {
+    badge.style.display = 'none';
+    bell.classList.remove('has-notif');
+  }
+}
+
+function toggleNotifPanel() {
+  const panel = document.getElementById('notifPanel');
+  const overlay = document.getElementById('notifPanelOverlay');
+  const isOpen = panel.classList.contains('open');
+  
+  if (isOpen) {
+    closeNotifPanel();
+  } else {
+    panel.classList.add('open');
+    overlay.classList.add('open');
+    renderNotifPanel();
+    // Marcar como lidas
+    orderNotifications.forEach(n => n.unread = false);
+    updateNotifBadge();
+  }
+}
+
+function closeNotifPanel() {
+  document.getElementById('notifPanel').classList.remove('open');
+  document.getElementById('notifPanelOverlay').classList.remove('open');
+}
+
+function renderNotifPanel() {
+  const list = document.getElementById('notifPanelList');
+  if (!list) return;
+  
+  if (orderNotifications.length === 0) {
+    list.innerHTML = '<div class="notif-empty">🔕 Nenhum pedido pendente<br><span style="font-size:12px; color:var(--text3)">Pedidos do cardápio digital aparecerão aqui</span></div>';
+    return;
+  }
+  
+  list.innerHTML = orderNotifications.map((n, idx) => {
+    const dt = n.dt ? new Date(n.dt) : new Date();
+    const timeStr = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    
+    const itensHtml = (n.itens || []).map(i => 
+      `<strong>${i.qtd || 1}x</strong> ${escapeHTML(i.nome)}`
+    ).join('<br>');
+    
+    const totalStr = n.total > 0 ? fmt(n.total) : '';
+    
+    return `
+      <div class="notif-card ${n.unread ? 'unread' : ''}">
+        <button class="notif-dismiss" onclick="dismissNotif(${idx})" title="Remover">✕</button>
+        <div class="notif-header">
+          <div class="notif-mesa">📍 ${escapeHTML(n.mesa)}</div>
+          <div class="notif-time">${timeStr}</div>
+        </div>
+        <div class="notif-itens">${itensHtml}</div>
+        ${n.obs ? `<div class="notif-obs">💬 ${escapeHTML(n.obs)}</div>` : ''}
+        ${totalStr ? `<div class="notif-total">Total: ${totalStr}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function dismissNotif(idx) {
+  orderNotifications.splice(idx, 1);
+  updateNotifBadge();
+  renderNotifPanel();
+}
+
+function clearAllNotifications() {
+  orderNotifications = [];
+  updateNotifBadge();
+  renderNotifPanel();
 }
 
 // ===================== AUTH =====================
 function doLogin(){
   const u=document.getElementById('loginUser').value.trim();
   const p=document.getElementById('loginPass').value;
+  const rem=document.getElementById('loginRemember') ? document.getElementById('loginRemember').checked : false;
   const user=USERS.find(x=>x.username===u&&x.password===p);
   if(!user){document.getElementById('loginError').style.display='block';return}
+  if(rem) {
+    localStorage.setItem('convpro_savedLogin', JSON.stringify({u, p}));
+  } else {
+    localStorage.removeItem('convpro_savedLogin');
+  }
   currentUser=user;
   document.getElementById('loginError').style.display='none';
   document.getElementById('loginScreen').style.display='none';
@@ -210,8 +451,11 @@ function doLogout(){
   if(orderCheckInterval) clearInterval(orderCheckInterval);
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('app').style.display='none';
-  document.getElementById('loginUser').value='';
-  document.getElementById('loginPass').value='';
+  const savedLogin = localStorage.getItem('convpro_savedLogin');
+  if(!savedLogin) {
+    document.getElementById('loginUser').value='';
+    document.getElementById('loginPass').value='';
+  }
 }
 
 function updateDate(){
@@ -382,14 +626,21 @@ function renderDashboard(){
   const vendasBeb=vendasHoje.filter(v=>!vendasEsp.includes(v));
   const totEsp=vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>{const p=DB.produtos.find(x=>x.id===i.produtoId);return p?.operacao==='Espetinho'}).reduce((a,i)=>a+i.subtotal,0),0);
   const totBeb=vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>{const p=DB.produtos.find(x=>x.id===i.produtoId);return p?.operacao==='Bebidas'}).reduce((a,i)=>a+i.subtotal,0),0);
+  const abertos = (DB.mesas_abertas || []).length;
+  const qtdPedidosHoje = vendasHoje.length + abertos;
 
   return `
   ${produtosAlerta.length?`<div class="alert warning">⚠️ ${produtosAlerta.length} produto(s) com estoque baixo: ${produtosAlerta.map(p=>p.nome).join(', ')}</div>`:''}
-  <div class="grid-4 mb-4">
+  <div class="grid-5 mb-4">
+    <div class="stat-card blue">
+      <div class="stat-label">Pedidos Hoje</div>
+      <div class="stat-value text-blue">${qtdPedidosHoje}</div>
+      <div class="stat-sub">${vendasHoje.length} concluídos, ${abertos} abertos</div>
+    </div>
     <div class="stat-card amber">
       <div class="stat-label">Vendas Hoje</div>
       <div class="stat-value text-amber">${fmt(totalHoje)}</div>
-      <div class="stat-sub">${vendasHoje.length} transações</div>
+      <div class="stat-sub">R$ finalizados hoje</div>
     </div>
     <div class="stat-card green">
       <div class="stat-label">Lucro Bruto</div>
