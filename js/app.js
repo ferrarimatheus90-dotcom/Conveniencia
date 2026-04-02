@@ -39,14 +39,83 @@ const USERS = [
 
 let DB = JSON.parse(localStorage.getItem('convpro_db') || 'null') || {
   produtos: [
+    // ── ESPETINHOS / PRODUÇÃO ──────────────────────────────────
     {id:1,nome:'Espetinho de Frango',categoria:'Espetinho',operacao:'Espetinho',unidade:'un',custo:3.5,preco:8,estoque:0,estoqueMin:5,status:'ativo',tipo:'produzido'},
     {id:2,nome:'Espetinho de Carne',categoria:'Espetinho',operacao:'Espetinho',unidade:'un',custo:4,preco:9,estoque:0,estoqueMin:5,status:'ativo',tipo:'produzido'},
     {id:3,nome:'Caldinho de Feijão',categoria:'Caldinho',operacao:'Espetinho',unidade:'un',custo:2.5,preco:6,estoque:0,estoqueMin:3,status:'ativo',tipo:'produzido'},
-    {id:4,nome:'Coca-Cola Lata',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2.5,preco:5,estoque:24,estoqueMin:12,status:'ativo',tipo:'pronto'},
-    {id:5,nome:'Skol 600ml',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:3.5,preco:7,estoque:18,estoqueMin:10,status:'ativo',tipo:'pronto'},
-    {id:6,nome:'Red Bull',categoria:'Energético',operacao:'Bebidas',unidade:'un',custo:8,preco:15,estoque:10,estoqueMin:4,status:'ativo',tipo:'pronto'},
-    {id:7,nome:'Pipus Salgado',categoria:'Salgados',operacao:'Bebidas',unidade:'un',custo:1.5,preco:3,estoque:30,estoqueMin:10,status:'ativo',tipo:'pronto'},
-    {id:8,nome:'Bala Fini',categoria:'Doces',operacao:'Bebidas',unidade:'pct',custo:0.8,preco:2,estoque:50,estoqueMin:20,status:'ativo',tipo:'pronto'},
+    // ── REFRIGERANTES 2L ──────────────────────────────────────
+    {id:10,nome:'Coca-Cola 2L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:7,preco:12,estoque:9,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:11,nome:'Fanta Laranja 2L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:6,preco:11,estoque:10,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:12,nome:'Guaraná 2L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:5.5,preco:10,estoque:11,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:13,nome:'Pepsi 2L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:5.5,preco:10,estoque:4,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:14,nome:'Pepsi Black 2L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:5.5,preco:10,estoque:4,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    // ── REFRIGERANTES 1L ──────────────────────────────────────
+    {id:15,nome:'Coca-Cola 1L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:4.5,preco:8,estoque:17,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:16,nome:'Coca-Cola 1L Zero',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:4.5,preco:8,estoque:2,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:17,nome:'Coca-Cola KS 1L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:5,preco:9,estoque:11,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:18,nome:'Guaraná 1L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:4,preco:7,estoque:4,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    // ── REFRIGERANTES PEQUENOS / LATAS ────────────────────────
+    {id:20,nome:'Coca-Cola Lata Normal',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2.5,preco:5,estoque:5,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:21,nome:'Coca-Cola Lata Zero',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2.5,preco:5,estoque:10,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:22,nome:'Coca-Cola 250ml',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:9,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:23,nome:'Pepsi 250ml',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:1,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:24,nome:'Guaraná Lata',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:14,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:25,nome:'Fanta Laranja Lata',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:4,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:26,nome:'Fanta Caju Lata',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:2,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    // ── CERVEJAS (UNIDADES) ───────────────────────────────────
+    {id:30,nome:'Heineken 350ml',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:4,preco:8,estoque:13,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:31,nome:'Skol Lata',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:2.5,preco:5,estoque:2,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:32,nome:'Skol Beats',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:4,preco:7,estoque:7,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:33,nome:'Original',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:4.5,preco:8,estoque:2,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:34,nome:'Petra',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:4,preco:7,estoque:2,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:35,nome:'Eisenbahn',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:5,preco:9,estoque:8,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:36,nome:'Budweiser 250ml',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:3.5,preco:6,estoque:10,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:37,nome:'Brahma Chopp Latão',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:3.5,preco:6,estoque:6,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    // ── CERVEJAS (CONVERTIDAS / CAIXAS) ──────────────────────
+    {id:40,nome:'Itaipava (unit)',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:2.5,preco:4.5,estoque:71,estoqueMin:24,status:'ativo',tipo:'pronto'},
+    {id:41,nome:'Spaten (unit)',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:3.5,preco:6,estoque:24,estoqueMin:12,status:'ativo',tipo:'pronto'},
+    {id:42,nome:'Itaipava Premium (unit)',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:3,preco:5.5,estoque:12,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    // ── ENERGÉTICOS ───────────────────────────────────────────
+    {id:50,nome:'TNT 269ml Original',categoria:'Energético',operacao:'Bebidas',unidade:'un',custo:3.5,preco:7,estoque:2,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:51,nome:'TNT Açaí c/ Guaraná',categoria:'Energético',operacao:'Bebidas',unidade:'un',custo:3.5,preco:7,estoque:4,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:52,nome:'TNT Maçã Verde',categoria:'Energético',operacao:'Bebidas',unidade:'un',custo:3.5,preco:7,estoque:2,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:53,nome:'Energético 2L',categoria:'Energético',operacao:'Bebidas',unidade:'un',custo:12,preco:22,estoque:3,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    // ── CACHAÇAS ──────────────────────────────────────────────
+    {id:60,nome:'Matuta Umburana 3L',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:45,preco:80,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:61,nome:'Matuta Bálsamo 1L',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:25,preco:45,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:62,nome:'Matuta Tradicional',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:20,preco:35,estoque:2,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:63,nome:'Matuta Mel e Limão',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:22,preco:38,estoque:2,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:64,nome:'Caninha do Brejo Umburana',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:18,preco:30,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:65,nome:'Caninha do Brejo Cristal',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:15,preco:25,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:66,nome:'Cachaça 51',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:12,preco:20,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:67,nome:'Cachaça Gostosa 480ml',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:8,preco:15,estoque:10,estoqueMin:3,status:'ativo',tipo:'pronto'},
+    {id:68,nome:'Cachaça Saliente 480ml',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:8,preco:15,estoque:9,estoqueMin:3,status:'ativo',tipo:'pronto'},
+    // ── WHISKY / GIN / OUTROS ────────────────────────────────
+    {id:70,nome:'Passport 1L',categoria:'Whisky',operacao:'Bebidas',unidade:'un',custo:35,preco:60,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:71,nome:'Black & White',categoria:'Whisky',operacao:'Bebidas',unidade:'un',custo:30,preco:55,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:72,nome:'Red Label',categoria:'Whisky',operacao:'Bebidas',unidade:'un',custo:50,preco:90,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:73,nome:'Jinrock',categoria:'Whisky',operacao:'Bebidas',unidade:'un',custo:28,preco:50,estoque:2,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:74,nome:'Dreher',categoria:'Conhaque',operacao:'Bebidas',unidade:'un',custo:20,preco:35,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:75,nome:'Fogo Paulista',categoria:'Aguardente',operacao:'Bebidas',unidade:'un',custo:12,preco:22,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    // ── OUTROS / ÁGUA ─────────────────────────────────────────
+    {id:80,nome:'Del Valle 1L',categoria:'Suco',operacao:'Bebidas',unidade:'un',custo:4,preco:7,estoque:4,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:81,nome:'Água Mineral 510ml',categoria:'Água',operacao:'Bebidas',unidade:'un',custo:1,preco:2.5,estoque:86,estoqueMin:24,status:'ativo',tipo:'pronto'},
+    {id:82,nome:'Água Tônica',categoria:'Água',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:9,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:83,nome:'Citrus 330ml',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:10,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    // ── GELO ──────────────────────────────────────────────────
+    {id:85,nome:'Gelo Comum (saco)',categoria:'Gelo',operacao:'Bebidas',unidade:'saco',custo:3,preco:6,estoque:3.5,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:86,nome:'Gelo Saborizado Morango',categoria:'Gelo',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:16,estoqueMin:5,status:'ativo',tipo:'pronto'},
+    {id:87,nome:'Gelo Saborizado Melancia',categoria:'Gelo',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:12,estoqueMin:5,status:'ativo',tipo:'pronto'},
+    {id:88,nome:'Gelo Saborizado Maçã Verde',categoria:'Gelo',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:10,estoqueMin:5,status:'ativo',tipo:'pronto'},
+    {id:89,nome:'Gelo Saborizado Maracujá',categoria:'Gelo',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:10,estoqueMin:5,status:'ativo',tipo:'pronto'},
+    {id:90,nome:'Gelo Saborizado Água de Coco',categoria:'Gelo',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:11,estoqueMin:5,status:'ativo',tipo:'pronto'},
+    // ── DOCES / CONVENIÊNCIA ──────────────────────────────────
+    {id:91,nome:'Halls',categoria:'Doces',operacao:'Bebidas',unidade:'pct',custo:1,preco:2,estoque:50,estoqueMin:20,status:'ativo',tipo:'pronto'},
+    {id:92,nome:'Trident',categoria:'Doces',operacao:'Bebidas',unidade:'un',custo:1,preco:2,estoque:12,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:93,nome:'Fini 15g',categoria:'Doces',operacao:'Bebidas',unidade:'un',custo:1,preco:2,estoque:13,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:94,nome:'Jujuba',categoria:'Doces',operacao:'Bebidas',unidade:'un',custo:1,preco:2,estoque:4,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    // ── ACESSÓRIOS ────────────────────────────────────────────
+    {id:95,nome:'Seda Natural',categoria:'Acessórios',operacao:'Bebidas',unidade:'pct',custo:3,preco:5,estoque:13,estoqueMin:5,status:'ativo',tipo:'pronto'},
   ],
   vendas: [],
   compras: [],
@@ -54,7 +123,7 @@ let DB = JSON.parse(localStorage.getItem('convpro_db') || 'null') || {
   consumos: [],
   caixas: [],
   auditoria: [],
-  nextId: {produto:9,venda:1,compra:1,producao:1,consumo:1,caixa:1}
+  nextId: {produto:100,venda:1,compra:1,producao:1,consumo:1,caixa:1}
 };
 
 let currentUser = null;
@@ -1360,11 +1429,14 @@ function renderEstoque(){
   const baixo=prods.filter(p=>p.estoque<=p.estoqueMin);
   return `
   ${baixo.length?`<div class="alert warning">⚠️ ${baixo.length} produto(s) com estoque abaixo do mínimo</div>`:''}
-  <div class="tabs">
-    <div class="tab active" onclick="estoqueTab(this,'todos')">Todos (${prods.length})</div>
-    <div class="tab" onclick="estoqueTab(this,'Espetinho')">🔥 Espetinho</div>
-    <div class="tab" onclick="estoqueTab(this,'Bebidas')">🍺 Bebidas</div>
-    <div class="tab" onclick="estoqueTab(this,'baixo')">⚠️ Baixo (${baixo.length})</div>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px;">
+    <div class="tabs" style="margin:0;">
+      <div class="tab active" onclick="estoqueTab(this,'todos')">Todos (${prods.length})</div>
+      <div class="tab" onclick="estoqueTab(this,'Espetinho')">🔥 Espetinho</div>
+      <div class="tab" onclick="estoqueTab(this,'Bebidas')">🍺 Bebidas</div>
+      <div class="tab" onclick="estoqueTab(this,'baixo')">⚠️ Baixo (${baixo.length})</div>
+    </div>
+    <button class="btn btn-primary" onclick="imprimirListaCompras()">🖨️ Relatório de Compras</button>
   </div>
   <div class="card">
     <div class="table-wrap">
@@ -1396,6 +1468,94 @@ function estoqueTab(el,filtro){
     else if(filtro==='baixo')show=tr.dataset.baixo==='true';
     tr.style.display=show?'':'none';
   });
+}
+
+function imprimirListaCompras() {
+  const baixo = DB.produtos.filter(p => p.status === 'ativo' && p.estoque <= p.estoqueMin);
+  if (baixo.length === 0) {
+    showToast('Nenhum produto com estoque abaixo do mínimo.', 'info');
+    return;
+  }
+
+  let printFrame = document.getElementById('printFrame');
+  if (!printFrame) {
+    printFrame = document.createElement('iframe');
+    printFrame.id = 'printFrame';
+    printFrame.style.position = 'absolute';
+    printFrame.style.width = '0px';
+    printFrame.style.height = '0px';
+    printFrame.style.border = 'none';
+    document.body.appendChild(printFrame);
+  }
+
+  const dataAtual = new Date().toLocaleDateString('pt-BR');
+  const horaAtual = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+
+  let itensHtml = '';
+  baixo.forEach((p, index) => {
+    itensHtml += `
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd;">${p.nome}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">${p.estoque}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">${p.estoqueMin}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;"></td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd;"></td>
+      </tr>
+    `;
+  });
+
+  const content = `
+    <html>
+      <head>
+        <title>Relatório de Compras - Conveniência Oliveira</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; color: #333; margin: 0; }
+          h2 { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+          .meta-info { font-size: 14px; font-weight: normal; color: #666; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 14px; }
+          th { background-color: #f5f5f5; padding: 10px 8px; text-align: left; border-bottom: 2px solid #ddd; font-weight: bold; }
+          .center { text-align: center; }
+          .footer { text-align: center; font-size: 12px; color: #777; margin-top: 40px; border-top: 1px solid #ddd; padding-top: 10px; }
+          @media print {
+            body { padding: 0; }
+            @page { margin: 1cm; }
+          }
+        </style>
+      </head>
+      <body>
+        <h2>
+          <span>Lista de Compras (Estoque Baixo)</span>
+          <span class="meta-info">Data: ${dataAtual} às ${horaAtual}</span>
+        </h2>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th class="center" style="width: 12%">Estoque</th>
+              <th class="center" style="width: 12%">Mínimo</th>
+              <th class="center" style="width: 15%">Qtd Comprada</th>
+              <th style="width: 25%">Verificado / Preço</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itensHtml}
+          </tbody>
+        </table>
+
+        <div class="footer">
+          Gerado pelo Sistema Conveniência Oliveira
+        </div>
+        <script>window.onload = function() { window.print(); }</script>
+      </body>
+    </html>
+  `;
+
+  const doc = printFrame.contentWindow.document;
+  doc.open();
+  doc.write(content);
+  doc.close();
+  showToast('Gerando relatório de impressão...', 'success');
 }
 
 // ===================== COMPRAS =====================
@@ -1926,9 +2086,105 @@ function renderBackup(){
           <em>Nota: O botão "Puxar" substitui os dados locais pelos dados que estiverem salvos lá no seu Google planilhas. Use caso altere valores lá e queira trazer pra cá.</em>
         </p>
       </div>
+
+      <div class="card" style="border-color:#f59e0b;background:var(--surface2);grid-column: 1 / -1;">
+        <h3 style="font-family:'Syne',sans-serif;font-size:16px;margin-bottom:10px">🏪 Importar Estoque Real da Conveniência</h3>
+        <p class="text-muted mb-4" style="font-size:13px">Carrega todos os produtos reais da Conveniência (refrigerantes, cervejas, cachaças, gelo, doces etc.) com as quantidades do último inventário. <strong>⚠️ Substitui apenas a lista de produtos — vendas e histórico são preservados.</strong></p>
+        <button class="btn btn-primary" style="background:#f59e0b;border-color:#f59e0b" onclick="importarEstoqueInicial()">📦 Carregar Estoque Real</button>
+      </div>
     </div>
   </div>`;
 }
+
+window.importarEstoqueInicial = function() {
+  if (!confirm('⚠️ Isso vai substituir a lista de produtos pelo estoque real da Conveniência.\n\nVendas, compras e histórico ficam intactos.\n\nConfirma?')) return;
+
+  const ESTOQUE_REAL = [
+    {id:1,nome:'Espetinho de Frango',categoria:'Espetinho',operacao:'Espetinho',unidade:'un',custo:3.5,preco:8,estoque:0,estoqueMin:5,status:'ativo',tipo:'produzido'},
+    {id:2,nome:'Espetinho de Carne',categoria:'Espetinho',operacao:'Espetinho',unidade:'un',custo:4,preco:9,estoque:0,estoqueMin:5,status:'ativo',tipo:'produzido'},
+    {id:3,nome:'Caldinho de Feijão',categoria:'Caldinho',operacao:'Espetinho',unidade:'un',custo:2.5,preco:6,estoque:0,estoqueMin:3,status:'ativo',tipo:'produzido'},
+    // Refrigerantes 2L
+    {id:10,nome:'Coca-Cola 2L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:7,preco:12,estoque:9,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:11,nome:'Fanta Laranja 2L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:6,preco:11,estoque:10,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:12,nome:'Guaraná 2L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:5.5,preco:10,estoque:11,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:13,nome:'Pepsi 2L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:5.5,preco:10,estoque:4,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:14,nome:'Pepsi Black 2L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:5.5,preco:10,estoque:4,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    // Refrigerantes 1L
+    {id:15,nome:'Coca-Cola 1L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:4.5,preco:8,estoque:17,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:16,nome:'Coca-Cola 1L Zero',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:4.5,preco:8,estoque:2,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:17,nome:'Coca-Cola KS 1L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:5,preco:9,estoque:11,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:18,nome:'Guaraná 1L',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:4,preco:7,estoque:4,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    // Latas pequenas
+    {id:20,nome:'Coca-Cola Lata Normal',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2.5,preco:5,estoque:5,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:21,nome:'Coca-Cola Lata Zero',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2.5,preco:5,estoque:10,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:22,nome:'Coca-Cola 250ml',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:9,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:23,nome:'Pepsi 250ml',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:1,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:24,nome:'Guaraná Lata',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:14,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:25,nome:'Fanta Laranja Lata',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:4,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:26,nome:'Fanta Caju Lata',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:2,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    // Cervejas unidades
+    {id:30,nome:'Heineken 350ml',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:4,preco:8,estoque:13,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:31,nome:'Skol Lata',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:2.5,preco:5,estoque:2,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:32,nome:'Skol Beats',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:4,preco:7,estoque:7,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:33,nome:'Original',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:4.5,preco:8,estoque:2,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:34,nome:'Petra',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:4,preco:7,estoque:2,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:35,nome:'Eisenbahn',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:5,preco:9,estoque:8,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:36,nome:'Budweiser 250ml',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:3.5,preco:6,estoque:10,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:37,nome:'Brahma Chopp Latão',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:3.5,preco:6,estoque:6,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    // Cervejas convertidas
+    {id:40,nome:'Itaipava (unit)',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:2.5,preco:4.5,estoque:71,estoqueMin:24,status:'ativo',tipo:'pronto'},
+    {id:41,nome:'Spaten (unit)',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:3.5,preco:6,estoque:24,estoqueMin:12,status:'ativo',tipo:'pronto'},
+    {id:42,nome:'Itaipava Premium (unit)',categoria:'Cerveja',operacao:'Bebidas',unidade:'un',custo:3,preco:5.5,estoque:12,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    // Energéticos
+    {id:50,nome:'TNT 269ml Original',categoria:'Energético',operacao:'Bebidas',unidade:'un',custo:3.5,preco:7,estoque:2,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:51,nome:'TNT Açaí c/ Guaraná',categoria:'Energético',operacao:'Bebidas',unidade:'un',custo:3.5,preco:7,estoque:4,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:52,nome:'TNT Maçã Verde',categoria:'Energético',operacao:'Bebidas',unidade:'un',custo:3.5,preco:7,estoque:2,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:53,nome:'Energético 2L',categoria:'Energético',operacao:'Bebidas',unidade:'un',custo:12,preco:22,estoque:3,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    // Cachaças
+    {id:60,nome:'Matuta Umburana 3L',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:45,preco:80,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:61,nome:'Matuta Bálsamo 1L',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:25,preco:45,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:62,nome:'Matuta Tradicional',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:20,preco:35,estoque:2,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:63,nome:'Matuta Mel e Limão',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:22,preco:38,estoque:2,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:64,nome:'Caninha do Brejo Umburana',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:18,preco:30,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:65,nome:'Caninha do Brejo Cristal',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:15,preco:25,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:66,nome:'Cachaça 51',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:12,preco:20,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:67,nome:'Cachaça Gostosa 480ml',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:8,preco:15,estoque:10,estoqueMin:3,status:'ativo',tipo:'pronto'},
+    {id:68,nome:'Cachaça Saliente 480ml',categoria:'Cachaça',operacao:'Bebidas',unidade:'un',custo:8,preco:15,estoque:9,estoqueMin:3,status:'ativo',tipo:'pronto'},
+    // Whisky / Gin
+    {id:70,nome:'Passport 1L',categoria:'Whisky',operacao:'Bebidas',unidade:'un',custo:35,preco:60,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:71,nome:'Black & White',categoria:'Whisky',operacao:'Bebidas',unidade:'un',custo:30,preco:55,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:72,nome:'Red Label',categoria:'Whisky',operacao:'Bebidas',unidade:'un',custo:50,preco:90,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:73,nome:'Jinrock',categoria:'Whisky',operacao:'Bebidas',unidade:'un',custo:28,preco:50,estoque:2,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:74,nome:'Dreher',categoria:'Conhaque',operacao:'Bebidas',unidade:'un',custo:20,preco:35,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    {id:75,nome:'Fogo Paulista',categoria:'Aguardente',operacao:'Bebidas',unidade:'un',custo:12,preco:22,estoque:1,estoqueMin:1,status:'ativo',tipo:'pronto'},
+    // Outros / Água
+    {id:80,nome:'Del Valle 1L',categoria:'Suco',operacao:'Bebidas',unidade:'un',custo:4,preco:7,estoque:4,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:81,nome:'Água Mineral 510ml',categoria:'Água',operacao:'Bebidas',unidade:'un',custo:1,preco:2.5,estoque:86,estoqueMin:24,status:'ativo',tipo:'pronto'},
+    {id:82,nome:'Água Tônica',categoria:'Água',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:9,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    {id:83,nome:'Citrus 330ml',categoria:'Refrigerante',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:10,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    // Gelo
+    {id:85,nome:'Gelo Comum (saco)',categoria:'Gelo',operacao:'Bebidas',unidade:'saco',custo:3,preco:6,estoque:3.5,estoqueMin:2,status:'ativo',tipo:'pronto'},
+    {id:86,nome:'Gelo Saborizado Morango',categoria:'Gelo',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:16,estoqueMin:5,status:'ativo',tipo:'pronto'},
+    {id:87,nome:'Gelo Saborizado Melancia',categoria:'Gelo',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:12,estoqueMin:5,status:'ativo',tipo:'pronto'},
+    {id:88,nome:'Gelo Saborizado Maçã Verde',categoria:'Gelo',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:10,estoqueMin:5,status:'ativo',tipo:'pronto'},
+    {id:89,nome:'Gelo Saborizado Maracujá',categoria:'Gelo',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:10,estoqueMin:5,status:'ativo',tipo:'pronto'},
+    {id:90,nome:'Gelo Saborizado Água de Coco',categoria:'Gelo',operacao:'Bebidas',unidade:'un',custo:2,preco:4,estoque:11,estoqueMin:5,status:'ativo',tipo:'pronto'},
+    // Doces / Conveniência
+    {id:91,nome:'Halls',categoria:'Doces',operacao:'Bebidas',unidade:'pct',custo:1,preco:2,estoque:50,estoqueMin:20,status:'ativo',tipo:'pronto'},
+    {id:92,nome:'Trident',categoria:'Doces',operacao:'Bebidas',unidade:'un',custo:1,preco:2,estoque:12,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:93,nome:'Fini 15g',categoria:'Doces',operacao:'Bebidas',unidade:'un',custo:1,preco:2,estoque:13,estoqueMin:6,status:'ativo',tipo:'pronto'},
+    {id:94,nome:'Jujuba',categoria:'Doces',operacao:'Bebidas',unidade:'un',custo:1,preco:2,estoque:4,estoqueMin:4,status:'ativo',tipo:'pronto'},
+    // Acessórios
+    {id:95,nome:'Seda Natural',categoria:'Acessórios',operacao:'Bebidas',unidade:'pct',custo:3,preco:5,estoque:13,estoqueMin:5,status:'ativo',tipo:'pronto'},
+  ];
+
+  DB.produtos = ESTOQUE_REAL;
+  DB.nextId.produto = 100;
+  saveDB();
+  auditLog('IMPORTAR_ESTOQUE', `Estoque real carregado: ${ESTOQUE_REAL.length} produtos`);
+  showToast(`✅ ${ESTOQUE_REAL.length} produtos importados com sucesso!`, 'success');
+  navigate('backup');
+};
 
 function salvarConfigGS() {
    const val = document.getElementById('gsUrlInput').value.trim();
