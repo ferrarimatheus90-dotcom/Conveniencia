@@ -496,13 +496,40 @@ function doLogin(){
   const rem=document.getElementById('loginRemember') ? document.getElementById('loginRemember').checked : false;
   const user=USERS.find(x=>x.username===u&&x.password===p);
   if(!user){document.getElementById('loginError').style.display='block';return}
+  
+  document.getElementById('loginError').style.display='none';
+  const btn = document.querySelector('.login-btn');
+  if(btn) { btn.innerHTML = 'Sincronizando Nuvem...'; btn.disabled = true; }
+  
+  if (GOOGLE_SHEETS_URL) {
+      fetch(GOOGLE_SHEETS_URL + '?action=carregar')
+        .then(r => r.json())
+        .then(remoteDb => {
+            if (remoteDb && remoteDb.produtos) {
+                DB = remoteDb;
+                localStorage.setItem('convpro_db', JSON.stringify(DB));
+            }
+            finishLogin(user, rem);
+        })
+        .catch(e => {
+            console.error("Erro ao puxar dados na nuvem:", e);
+            finishLogin(user, rem);
+        });
+  } else {
+      finishLogin(user, rem);
+  }
+}
+
+function finishLogin(user, rem){
+  const btn = document.querySelector('.login-btn');
+  if(btn) { btn.innerHTML = 'Entrar'; btn.disabled = false; }
+  
   if(rem) {
-    localStorage.setItem('convpro_savedLogin', JSON.stringify({u, p}));
+    localStorage.setItem('convpro_savedLogin', JSON.stringify({u: user.username, p: user.password}));
   } else {
     localStorage.removeItem('convpro_savedLogin');
   }
   currentUser=user;
-  document.getElementById('loginError').style.display='none';
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').style.display='flex';
   document.getElementById('sidebarUser').textContent=user.name+' · '+user.role;
