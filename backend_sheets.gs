@@ -130,7 +130,13 @@ function getSheetData(sheetName) {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
       var val = data[i][j];
-      if (typeof val === 'string' && (val.indexOf('[') === 0 || val.indexOf('{') === 0)) {
+      // Converte objetos Date do Google Sheets para string 'YYYY-MM-DD'
+      if (val instanceof Date) {
+        var y = val.getFullYear();
+        var m = String(val.getMonth() + 1).padStart(2, '0');
+        var d = String(val.getDate()).padStart(2, '0');
+        val = y + '-' + m + '-' + d;
+      } else if (typeof val === 'string' && (val.indexOf('[') === 0 || val.indexOf('{') === 0)) {
         try { val = JSON.parse(val); } catch(e){}
       }
       obj[headers[j]] = val !== "" ? val : null;

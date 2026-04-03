@@ -756,11 +756,11 @@ function opTag(op){
 
 // ===================== DASHBOARD =====================
 function renderDashboard(){
-  const vendasHoje=DB.vendas.filter(v=>v.data===today());
+  const vendasHoje=DB.vendas.filter(v=>(v.data||'').slice(0,10)===today());
   const totalHoje=vendasHoje.reduce((s,v)=>s+v.total,0);
   const custoHoje=vendasHoje.reduce((s,v)=>s+v.custo,0);
   const lucroHoje=totalHoje-custoHoje;
-  const totalVendasMes=DB.vendas.filter(v=>v.data.slice(0,7)===today().slice(0,7)).reduce((s,v)=>s+v.total,0);
+  const totalVendasMes=DB.vendas.filter(v=>(v.data||'').slice(0,7)===today().slice(0,7)).reduce((s,v)=>s+v.total,0);
 
   const produtosAlerta=DB.produtos.filter(p=>p.status==='ativo'&&p.estoque<=p.estoqueMin);
 
@@ -1373,7 +1373,7 @@ function renderProducao(){
   
   // calcular saldos do dia
   const hoje=today();
-  const vendasHoje=DB.vendas.filter(v=>v.data===hoje);
+  const vendasHoje=DB.vendas.filter(v=>(v.data||'').slice(0,10)===hoje);
   
   const rows=produzidos.map(p=>{
     const prodHoje=DB.producoes.filter(x=>x.data===hoje&&x.produtoId===p.id).reduce((s,x)=>s+x.qtd,0);
@@ -2050,7 +2050,7 @@ window.mudarDataCaixa = function() {
 
 function renderCaixa(){
   if (!currentCaixaDate) currentCaixaDate = today();
-  const vendasHoje=DB.vendas.filter(v=>v.data===currentCaixaDate);
+  const vendasHoje=DB.vendas.filter(v=>(v.data||'').slice(0,10)===currentCaixaDate);
 
   const totEsp=calcOpTotal(vendasHoje,'Espetinho');
   const totBeb=calcOpTotal(vendasHoje,'Bebidas');
@@ -2144,9 +2144,9 @@ function renderRelatorios(){
   const semanaAgo=new Date();semanaAgo.setDate(semanaAgo.getDate()-7);
   vendas=DB.vendas.filter(v=>{
     const d=new Date(v.data);
-    if(periodo==='hoje')return v.data===hoje;
+    if(periodo==='hoje')return (v.data||'').slice(0,10)===hoje;
     if(periodo==='semana')return d>=semanaAgo;
-    if(periodo==='mes')return v.data.slice(0,7)===hoje.slice(0,7);
+    if(periodo==='mes')return (v.data||'').slice(0,7)===hoje.slice(0,7);
     return true;
   });
 
