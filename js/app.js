@@ -27,6 +27,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (document.getElementById('loginUser')) document.getElementById('loginUser').value = data.u || '';
       if (document.getElementById('loginPass')) document.getElementById('loginPass').value = data.p || '';
       if (document.getElementById('loginRemember')) document.getElementById('loginRemember').checked = true;
+      setTimeout(doLogin, 300); // Auto login para puxar atualizado assim que abrir!
     } catch(e) {}
   }
 });
@@ -263,32 +264,44 @@ async function checkPedidosDigitais() {
       }
     }
   } catch(e) {
-    console.error("Erro ao puxar pedidos digitais:", e);
+    console.error("❌ Erro ao puxar pedidos digitais:", e);
+    // Fallback: se o admin não configurou a URL, avisa
+    if (!GOOGLE_SHEETS_URL) {
+      console.warn("⚠️ URL do Google Sheets não configurada no Admin. Notificações desativadas.");
+    }
   }
 }
 
 // ==================== SISTEMA DE ALERTA COMPLETO ====================
 
 function dispararAlertaPedido(pedidos) {
-  // 1. Som forte (4 bips agudos)
-  tocarSomNotificacaoForte();
+  console.log("🔔 Novo pedido detectado! Disparando alertas...");
+  
+  // 1. Som forte (isolar erro para não travar o resto)
+  try {
+    tocarSomNotificacaoForte();
+  } catch(e) { 
+    console.warn("🔇 Áudio bloqueado pelo navegador ou erro no som:", e); 
+  }
 
   // 2. Flash visual na tela
-  triggerOrderFlash();
+  try { triggerOrderFlash(); } catch(e){}
 
   // 3. Atualizar badge e sininho
-  updateNotifBadge();
+  try { updateNotifBadge(); } catch(e){}
 
   // 4. Toast especial grande
-  const qtdPed = pedidos.length;
-  const mesas = pedidos.map(p => p.cliente).join(', ');
-  showOrderToast(`🔔 ${qtdPed} novo(s) pedido(s)!`, `Mesa: ${mesas} — Clique no sininho para ver detalhes`);
+  try {
+    const qtdPed = pedidos.length;
+    const mesas = pedidos.map(p => p.cliente).join(', ');
+    showOrderToast(`🔔 ${qtdPed} novo(s) pedido(s)!`, `Mesa/Cliente: ${mesas} — Clique no sininho para ver detalhes`);
+  } catch(e){}
 
   // 5. Notificação nativa do navegador
-  sendBrowserNotification(pedidos);
+  try { sendBrowserNotification(pedidos); } catch(e){}
 
   // 6. Mudar título da aba para chamar atenção
-  flashTabTitle(pedidos.length);
+  try { flashTabTitle(pedidos.length); } catch(e){}
 }
 
 function tocarSomNotificacaoForte() {
@@ -537,6 +550,45 @@ function finishLogin(user, rem){
   updateDate();
   setInterval(updateDate,60000);
   startPollingOrders();
+
+  // Sincronização Automática Background (para manter 3 PCs com os mesmos dados)
+  if (!window.bgSyncInterval && GOOGLE_SHEETS_URL) {
+    window.bgSyncInterval = setInterval(async () => {
+      try {
+        const res = await fetch(GOOGLE_SHEETS_URL + '?action=carregar');
+        const remoteDb = await res.json();
+        if (remoteDb && remoteDb.produtos) {
+          let updated = false;
+          // Puxando vendas que outros PCs fizeram
+          (remoteDb.vendas || []).forEach(rv => {
+            if (!DB.vendas.find(v => v.id === rv.id)) { DB.vendas.push(rv); updated = true; }
+          });
+          // Se tiver atualização importante da nuvem
+          if (updated) {
+            DB.produtos = remoteDb.produtos; // Sincroniza estoque e produtos novos
+            DB.compras = remoteDb.compras;
+            
+            // LOGICA INTELIGENTE PARA MESAS: Mesclar em vez de substituir cegamente
+            // para não perder pedidos que acabaram de chegar via Polling
+            if (remoteDb.mesas_abertas) {
+              const mesasAtuais = DB.mesas_abertas || [];
+              remoteDb.mesas_abertas.forEach(rm => {
+                const ex = mesasAtuais.find(m => m.cliente === rm.cliente);
+                if (!ex) { mesasAtuais.push(rm); }
+              });
+              DB.mesas_abertas = mesasAtuais;
+            }
+
+            localStorage.setItem('convpro_db', JSON.stringify(DB));
+            if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
+            if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
+            if (currentPage === 'vendas') renderProdutos_venda(); 
+          }
+        }
+      } catch(e){}
+    }, 20000); // Verificar a cada 20 segundos
+  }
+
   navigate('dashboard');
   auditLog('LOGIN','Acesso ao sistema');
 }
@@ -712,6 +764,29 @@ function renderDashboard(){
 
   const produtosAlerta=DB.produtos.filter(p=>p.status==='ativo'&&p.estoque<=p.estoqueMin);
 
+  // === Novas Métricas: Ticket Médio & Pico de Horário ===
+  const ticketMedio = vendasHoje.length ? (totalHoje / vendasHoje.length) : 0;
+  const horasMap = {};
+  vendasHoje.forEach(v => {
+    if (v.dtAtualizacao) {
+      const h = new Date(v.dtAtualizacao).getHours();
+      if (!isNaN(h)) horasMap[h] = (horasMap[h] || 0) + 1;
+    }
+  });
+  let picoHora = '--';
+  let maxVendasHora = 0;
+  for (const [h, qtd] of Object.entries(horasMap)) {
+    if (qtd > maxVendasHora) { maxVendasHora = qtd; picoHora = `${h}h`; }
+  }
+
+  // === Novas Métricas: Consumo/Quebra do Dia ===
+  const consumoHoje = (DB.consumos || []).filter(c => c.data === today());
+  const custoConsumoHoje = consumoHoje.reduce((s, c) => {
+    const p = DB.produtos.find(x => x.id === c.produtoId);
+    return s + (p && p.custo ? p.custo * c.qtd : 0);
+  }, 0);
+  const qtdConsumo = consumoHoje.reduce((s, c) => s + c.qtd, 0);
+
   const rankMap={};
   vendasHoje.forEach(v=>v.itens.forEach(i=>{
     rankMap[i.nome]=(rankMap[i.nome]||0)+i.qtd;
@@ -727,7 +802,7 @@ function renderDashboard(){
 
   return `
   ${produtosAlerta.length?`<div class="alert warning">⚠️ ${produtosAlerta.length} produto(s) com estoque baixo: ${produtosAlerta.map(p=>p.nome).join(', ')}</div>`:''}
-  <div class="grid-5 mb-4">
+  <div class="grid-5 mb-4" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
     <div class="stat-card blue">
       <div class="stat-label">Pedidos Hoje</div>
       <div class="stat-value text-blue">${qtdPedidosHoje}</div>
@@ -743,6 +818,18 @@ function renderDashboard(){
       <div class="stat-value text-green">${fmt(lucroHoje)}</div>
       <div class="stat-sub">Margem: ${totalHoje?((lucroHoje/totalHoje)*100).toFixed(1):0}%</div>
     </div>
+    
+    <div class="stat-card" style="border-left: 4px solid #8b5cf6;">
+      <div class="stat-label">Ticket Médio</div>
+      <div class="stat-value" style="color:#8b5cf6">${fmt(ticketMedio)}</div>
+      <div class="stat-sub">Pico de vendas às: <strong>${picoHora}</strong></div>
+    </div>
+    <div class="stat-card red" style="border-left: 4px solid #ef4444;">
+      <div class="stat-label">Perdas / Consumo (Hoje)</div>
+      <div class="stat-value" style="color:#ef4444">${fmt(custoConsumoHoje)}</div>
+      <div class="stat-sub">${qtdConsumo} un. baixadas</div>
+    </div>
+
     <div class="stat-card blue">
       <div class="stat-label">Vendas no Mês</div>
       <div class="stat-value text-blue">${fmt(totalVendasMes)}</div>
@@ -855,15 +942,13 @@ function renderVendas(){
   <div class="grid-2" style="gap:16px">
     <div>
       <div class="card mb-3">
-        <div class="flex items-center gap-2 mb-3">
-          <button class="btn btn-ghost btn-sm ${selectedOp==='todos'?'btn-primary':''}" onclick="filterOp('todos')">Todos</button>
-          <button class="btn btn-ghost btn-sm ${selectedOp==='Espetinho'?'':''}">
-          </button>
-        </div>
         <div class="flex gap-2 mb-3">
-          <button class="btn btn-ghost btn-sm" onclick="filterOp('todos')" id="opBtn-todos">Todos</button>
-          <button class="btn btn-ghost btn-sm" onclick="filterOp('Espetinho')" id="opBtn-Espetinho">🔥 Espetinho</button>
-          <button class="btn btn-ghost btn-sm" onclick="filterOp('Bebidas')" id="opBtn-Bebidas">🍺 Bebidas</button>
+          <button class="btn btn-ghost btn-sm" id="opBtn-todos">Todos</button>
+          <button class="btn btn-ghost btn-sm" id="opBtn-Espetinho">🔥 Espetinho</button>
+          <button class="btn btn-ghost btn-sm" id="opBtn-Bebidas">🍺 Bebidas</button>
+        </div>
+        <div class="mb-3">
+          <input type="text" id="vendaSearch" class="form-control" placeholder="🔍 Pesquisar produto por nome..." oninput="renderProdutos_venda()">
         </div>
         <div class="produto-grid" id="produtoGrid"></div>
       </div>
@@ -941,6 +1026,13 @@ function renderProdutos_venda(){
   if(!grid)return;
   let prods=DB.produtos.filter(p=>p.status==='ativo');
   if(selectedOp!=='todos')prods=prods.filter(p=>p.operacao===selectedOp);
+  
+  const searchInput = document.getElementById('vendaSearch');
+  if (searchInput && searchInput.value) {
+    const term = searchInput.value.toLowerCase().trim();
+    prods = prods.filter(p => p.nome.toLowerCase().includes(term));
+  }
+
   grid.innerHTML=prods.map(p=>`
     <div class="produto-btn" id="pbtn-${p.id}" onclick="addToCart(${p.id})">
       <div class="p-op">${p.operacao==='Espetinho'?'🔥':'🍺'} ${p.operacao}</div>
@@ -1605,40 +1697,78 @@ function renderCompras(){
           <td><span class="badge blue">${c.pagamento}</span></td>
           <td class="text-muted">${c.itens.length} item(s)</td>
           <td class="mono text-amber">${fmt(c.total)}</td>
-          <td><button class="btn btn-ghost btn-sm" onclick="verCompra(${c.id})">Ver</button></td>
+          <td>
+            <div class="flex gap-1">
+              <button class="btn btn-ghost btn-sm" onclick="verCompra(${c.id})" title="Ver Detalhes">👁️</button>
+              <button class="btn btn-ghost btn-sm" onclick="editarCompra(${c.id})" title="Editar Compra">📝</button>
+              <button class="btn btn-ghost btn-sm text-red" onclick="confirmaExcluirCompra(${c.id})" title="Excluir Compra">🗑️</button>
+            </div>
+          </td>
         </tr>`).join('')}
       </tbody>
     </table></div>`:''}
   </div>`;
 }
 
+function editarCompra(id) {
+  const c = DB.compras.find(x => x.id === id);
+  if (!c) return;
+  modalCompra(c);
+}
+
+function confirmaExcluirCompra(id) {
+  const c = DB.compras.find(x => x.id === id);
+  if (!c) return;
+  if (!confirm(`⚠️ Atenção: Deseja realmente EXCLUIR a compra do fornecedor "${c.fornecedor}" no valor de ${fmt(c.total)}?\n\nIsso irá SUBTRAIR as quantidades compradas do estoque atual dos produtos.`)) return;
+
+  // Reverter estoque
+  c.itens.forEach(item => {
+    const p = DB.produtos.find(x => x.id === item.produtoId);
+    if (p) {
+      p.estoque = Math.max(0, p.estoque - item.qtd);
+    }
+  });
+
+  DB.compras = DB.compras.filter(x => x.id !== id);
+  saveDB();
+  auditLog('EXCLUSÃO COMPRA', `${c.fornecedor} – ${fmt(c.total)}`);
+  showToast('Compra excluída e estoque ajustado!', 'info');
+  navigate('compras');
+}
+
 let compraItens=[];
 
-function modalCompra(){
-  compraItens=[];
+function modalCompra(compraParaEditar = null){
+  compraItens = compraParaEditar ? JSON.parse(JSON.stringify(compraParaEditar.itens)) : [];
+  const isEdit = !!compraParaEditar;
+
   openModal(`
-    <div class="modal-title">🧾 Registrar Compra</div>
+    <div class="modal-title">${isEdit ? '📝 Editar Compra #' + compraParaEditar.id : '🧾 Registrar Compra'}</div>
     <div class="form-row cols-2 mb-3">
       <div class="form-group" style="margin:0">
         <label class="form-label">Fornecedor</label>
-        <input class="form-control" id="cpFornec" placeholder="Nome do fornecedor">
+        <input class="form-control" id="cpFornec" placeholder="Nome do fornecedor" value="${isEdit ? compraParaEditar.fornecedor : ''}">
       </div>
       <div class="form-group" style="margin:0">
         <label class="form-label">Data</label>
-        <input type="date" class="form-control" id="cpData" value="${today()}">
+        <input type="date" class="form-control" id="cpData" value="${isEdit ? compraParaEditar.data : today()}">
       </div>
     </div>
     <div class="form-row cols-2 mb-3">
       <div class="form-group" style="margin:0">
         <label class="form-label">Operação</label>
         <select class="form-control" id="cpOp">
-          <option>Espetinho</option><option>Bebidas</option>
+          <option ${isEdit && compraParaEditar.operacao === 'Espetinho' ? 'selected' : ''}>Espetinho</option>
+          <option ${isEdit && compraParaEditar.operacao === 'Bebidas' ? 'selected' : ''}>Bebidas</option>
         </select>
       </div>
       <div class="form-group" style="margin:0">
         <label class="form-label">Pagamento</label>
         <select class="form-control" id="cpPag">
-          <option>Pix</option><option>Dinheiro</option><option>Cartão Débito</option><option>Cartão Crédito</option>
+          <option ${isEdit && compraParaEditar.pagamento === 'Pix' ? 'selected' : ''}>Pix</option>
+          <option ${isEdit && compraParaEditar.pagamento === 'Dinheiro' ? 'selected' : ''}>Dinheiro</option>
+          <option ${isEdit && compraParaEditar.pagamento === 'Cartão Débito' ? 'selected' : ''}>Cartão Débito</option>
+          <option ${isEdit && compraParaEditar.pagamento === 'Cartão Crédito' ? 'selected' : ''}>Cartão Crédito</option>
         </select>
       </div>
     </div>
@@ -1655,12 +1785,13 @@ function modalCompra(){
     <button class="btn btn-ghost btn-sm mb-3" onclick="addCompraItem()">+ Adicionar Item</button>
     <div class="form-group">
       <label class="form-label">Observação</label>
-      <input class="form-control" id="cpObs" placeholder="opcional">
+      <input class="form-control" id="cpObs" placeholder="opcional" value="${isEdit ? compraParaEditar.obs || '' : ''}">
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="salvarCompra()">Salvar Compra</button>
+      <button class="btn btn-primary" onclick="salvarCompra(${isEdit ? compraParaEditar.id : 'null'})">${isEdit ? 'Atualizar Compra' : 'Salvar Compra'}</button>
     </div>`);
+  if (isEdit) renderCompraItens();
 }
 
 function addCompraItem(){
@@ -1694,7 +1825,7 @@ function renderCompraItens(){
 }
 function removeCompraItem(i){compraItens.splice(i,1);renderCompraItens();}
 
-function salvarCompra(){
+function salvarCompra(idEdicao = null){
   if(compraItens.length===0){showToast('Adicione pelo menos um item','error');return;}
   const fornec=escapeHTML(document.getElementById('cpFornec').value||'Sem fornecedor');
   const data=document.getElementById('cpData').value||today();
@@ -1702,17 +1833,54 @@ function salvarCompra(){
   const pag=document.getElementById('cpPag').value;
   const obs=escapeHTML(document.getElementById('cpObs').value);
   const total=compraItens.reduce((s,i)=>s+i.total,0);
-  const compra={id:uid('compra'),fornecedor:fornec,data,operacao:op,pagamento:pag,obs,total,itens:compraItens,usuario:currentUser.name,dt:getLocalISODate()};
-  // atualizar estoque e custo
+  
+  // Se for edição, primeiro revertemos o estoque da versão ANTIGA
+  if (idEdicao) {
+    const compraAntiga = DB.compras.find(x => x.id === idEdicao);
+    if (compraAntiga) {
+      compraAntiga.itens.forEach(item => {
+        const p = DB.produtos.find(x => x.id === item.produtoId);
+        if (p) {
+          p.estoque = Math.max(0, p.estoque - item.qtd);
+        }
+      });
+    }
+  }
+
+  const compra = {
+    id: idEdicao || uid('compra'),
+    fornecedor: fornec,
+    data,
+    operacao: op,
+    pagamento: pag,
+    obs,
+    total,
+    itens: compraItens,
+    usuario: currentUser.name,
+    dt: getLocalISODate()
+  };
+
+  // Atualizar estoque e custo com os itens novos
   compraItens.forEach(item=>{
     const p=DB.produtos.find(x=>x.id===item.produtoId);
-    if(p){p.estoque+=item.qtd;p.custo=item.custo;}
+    if(p){
+      p.estoque += item.qtd;
+      p.custo = item.custo;
+    }
   });
-  DB.compras.push(compra);
+
+  if (idEdicao) {
+    const idx = DB.compras.findIndex(x => x.id === idEdicao);
+    DB.compras[idx] = compra;
+    auditLog('EDIÇÃO COMPRA', `${fornec} – ${fmt(total)}`);
+  } else {
+    DB.compras.push(compra);
+    auditLog('COMPRA',`${fornec} – ${fmt(total)}`);
+  }
+
   saveDB();
-  auditLog('COMPRA',`${fornec} – ${fmt(total)}`);
   closeModal();
-  showToast('Compra registrada! '+fmt(total),'success');
+  showToast(idEdicao ? 'Compra atualizada!' : 'Compra registrada! '+fmt(total), 'success');
   navigate('compras');
 }
 
@@ -1874,8 +2042,15 @@ function renderUsuarios(){
 }
 
 // ===================== CAIXA =====================
+let currentCaixaDate = null;
+window.mudarDataCaixa = function() {
+  currentCaixaDate = document.getElementById('caixaData').value;
+  document.getElementById('content').innerHTML = renderCaixa();
+};
+
 function renderCaixa(){
-  const vendasHoje=DB.vendas.filter(v=>v.data===today());
+  if (!currentCaixaDate) currentCaixaDate = today();
+  const vendasHoje=DB.vendas.filter(v=>v.data===currentCaixaDate);
 
   const totEsp=calcOpTotal(vendasHoje,'Espetinho');
   const totBeb=calcOpTotal(vendasHoje,'Bebidas');
@@ -1891,7 +2066,10 @@ function renderCaixa(){
 
   return `
   <div class="flex items-center justify-between mb-4">
-    <h2 style="font-family:'Syne',sans-serif;font-size:20px">Fechamento – ${new Date().toLocaleDateString('pt-BR')}</h2>
+    <div class="flex items-center gap-2">
+      <h2 style="font-family:'Syne',sans-serif;font-size:20px;margin:0">Caixa do Dia</h2>
+      <input type="date" id="caixaData" class="form-control" style="width: auto; padding: 4px; font-weight: bold;" value="${currentCaixaDate}" onchange="mudarDataCaixa()">
+    </div>
     <button class="btn btn-primary" onclick="imprimirCaixa()">Imprimir</button>
   </div>
 
@@ -2445,3 +2623,90 @@ function imprimirCupom(venda) {
 // ===================== INIT =====================
 document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 document.getElementById('loginUser').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginPass').focus();});
+
+// ===================== MIGRATION: RECOVERY 02/04 (SMART MERGE) =====================
+/**
+ * Script de emergência para recuperar dados de ontem (02/04/2026) 
+ * injetando-os no localStorage sem apagar as vendas de hoje (03/04/2026).
+ */
+(function smartMergeBackup() {
+  const MERGE_KEY = 'convpro_merged_recovery_v3';
+  if (localStorage.getItem(MERGE_KEY)) return; // Já executou uma vez
+
+  console.log("🚀 Iniciando Recuperação Inteligente de Dados (02/04)...");
+
+  const backupData = {
+    "produtos": [{"id":1,"nome":"Espetinho de Frango","categoria":"Espetinho","operacao":"Espetinho","unidade":"un","custo":4.9,"preco":7,"estoque":5,"estoqueMin":5,"status":"ativo","tipo":"produzido"},{"id":2,"nome":"Espetinho de Carne","categoria":"Espetinho","operacao":"Espetinho","unidade":"un","custo":6.08,"preco":8,"estoque":18,"estoqueMin":5,"status":"ativo","tipo":"produzido"},{"id":3,"nome":"Caldinho de Feijão","categoria":"Caldinho","operacao":"Espetinho","unidade":"un","custo":2.5,"preco":6,"estoque":0,"estoqueMin":3,"status":"inativo","tipo":"produzido"},{"id":10,"nome":"Coca-Cola 2L","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":9.26,"preco":12,"estoque":9,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":11,"nome":"Fanta Laranja 2L","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":7.52,"preco":10,"estoque":10,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":12,"nome":"Guaraná 2L","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":7.12,"preco":10,"estoque":11,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":13,"nome":"Pepsi 2L","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":6.88,"preco":10,"estoque":4,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":14,"nome":"Pepsi Black 2L","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":6.88,"preco":10,"estoque":4,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":15,"nome":"Coca-Cola 1L","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":6.01,"preco":8,"estoque":17,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":16,"nome":"Coca-Cola 1L Zero","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":5.84,"preco":8,"estoque":1,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":17,"nome":"Coca-Cola KS 1L","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":4.77,"preco":8,"estoque":10,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":18,"nome":"Guaraná 1L","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":4.32,"preco":8,"estoque":2,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":20,"nome":"Coca-Cola Lata Normal","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":3.06,"preco":5,"estoque":5,"estoqueMin":6,"status":"ativo","tipo":"pronto"},{"id":21,"nome":"Coca-Cola Lata Zero","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":2.98,"preco":5,"estoque":9,"estoqueMin":6,"status":"ativo","tipo":"pronto"},{"id":22,"nome":"Coca-Cola 250ml","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":2.57,"preco":4,"estoque":9,"estoqueMin":6,"status":"ativo","tipo":"pronto"},{"id":23,"nome":"Pepsi 200ml","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":1.52,"preco":3,"estoque":1,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":24,"nome":"Guaraná Lata","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":2.57,"preco":5,"estoque":14,"estoqueMin":6,"status":"ativo","tipo":"pronto"},{"id":25,"nome":"Fanta Laranja Lata","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":2.42,"preco":5,"estoque":4,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":26,"nome":"Fanta Caju Lata","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":2.42,"preco":5,"estoque":2,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":30,"nome":"Heineken 350ml","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":5,"preco":7,"estoque":13,"estoqueMin":6,"status":"ativo","tipo":"pronto"},{"id":31,"nome":"Skol Lata","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":2.91,"preco":5,"estoque":2,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":32,"nome":"Skol Beats","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":5,"preco":8,"estoque":7,"estoqueMin":3,"status":"ativo","tipo":"pronto"},{"id":33,"nome":"Original","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":4.5,"preco":8,"estoque":2,"estoqueMin":4,"status":"inativo","tipo":"pronto"},{"id":34,"nome":"Petra","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":3.27,"preco":5,"estoque":2,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":35,"nome":"Eisenbahn","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":3.64,"preco":5,"estoque":8,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":36,"nome":"Budweiser 350ml","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":3.4,"preco":5,"estoque":5,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":37,"nome":"Brahma Chopp Latão","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":4.16,"preco":6,"estoque":6,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":40,"nome":"Itaipava (unit)","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":3.21,"preco":5,"estoque":68,"estoqueMin":12,"status":"ativo","tipo":"pronto"},{"id":41,"nome":"Spaten (unit)","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":3.66,"preco":6,"estoque":24,"estoqueMin":5,"status":"ativo","tipo":"pronto"},{"id":42,"nome":"Itaipava Premium (unit)","categoria":"Cerveja","operacao":"Bebidas","unidade":"un","custo":3.43,"preco":5,"estoque":12,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":50,"nome":"TNT 269ml Original","categoria":"Energético","operacao":"Bebidas","unidade":"un","custo":5.53,"preco":8,"estoque":2,"estoqueMin":2,"status":"ativo","tipo":"pronto"},{"id":51,"nome":"TNT Açaí c/ Guaraná","categoria":"Energético","operacao":"Bebidas","unidade":"un","custo":7.16,"preco":10,"estoque":4,"estoqueMin":2,"status":"ativo","tipo":"pronto"},{"id":52,"nome":"TNT Maçã Verde","categoria":"Energético","operacao":"Bebidas","unidade":"un","custo":7.16,"preco":10,"estoque":2,"estoqueMin":2,"status":"ativo","tipo":"pronto"},{"id":53,"nome":"Energético 2L - Bally","categoria":"Energético","operacao":"Bebidas","unidade":"un","custo":10,"preco":15,"estoque":3,"estoqueMin":2,"status":"ativo","tipo":"pronto"},{"id":60,"nome":"Matuta Umburana 1L","categoria":"Cachaça","operacao":"Bebidas","unidade":"un","custo":26.66,"preco":0,"estoque":3,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":61,"nome":"Matuta Bálsamo 1L","categoria":"Cachaça","operacao":"Bebidas","unidade":"un","custo":26.66,"preco":0,"estoque":1,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":62,"nome":"Matuta Cristal 1L","categoria":"Cachaça","operacao":"Bebidas","unidade":"un","custo":19.5,"preco":0,"estoque":2,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":63,"nome":"Matuta Mel e Limão","categoria":"Cachaça","operacao":"Bebidas","unidade":"un","custo":31.5,"preco":0,"estoque":2,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":64,"nome":"Caninha do Brejo Umburana","categoria":"Cachaça","operacao":"Bebidas","unidade":"un","custo":18,"preco":0,"estoque":1,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":65,"nome":"Caninha do Brejo Cristal","categoria":"Cachaça","operacao":"Bebidas","unidade":"un","custo":15,"preco":0,"estoque":1,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":66,"nome":"Cachaça 51","categoria":"Cachaça","operacao":"Bebidas","unidade":"un","custo":0,"preco":0,"estoque":1,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":67,"nome":"Cachaça Gostosa 480ml","categoria":"Cachaça","operacao":"Bebidas","unidade":"un","custo":2,"preco":3,"estoque":10,"estoqueMin":3,"status":"ativo","tipo":"pronto"},{"id":68,"nome":"Cachaça Saliente 480ml","categoria":"Cachaça","operacao":"Bebidas","unidade":"un","custo":2,"preco":3,"estoque":9,"estoqueMin":3,"status":"ativo","tipo":"pronto"},{"id":70,"nome":"Passport 1L","categoria":"Whisky","operacao":"Bebidas","unidade":"un","custo":40.9,"preco":50,"estoque":1,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":71,"nome":"Black & White","categoria":"Whisky","operacao":"Bebidas","unidade":"un","custo":62.83,"preco":70,"estoque":1,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":72,"nome":"Red Label","categoria":"Whisky","operacao":"Bebidas","unidade":"un","custo":87.84,"preco":100,"estoque":1,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":73,"nome":"Jinrock","categoria":"Whisky","operacao":"Bebidas","unidade":"un","custo":25,"preco":35,"estoque":2,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":74,"nome":"Dreher","categoria":"Conhaque","operacao":"Bebidas","unidade":"un","custo":18,"preco":22,"estoque":1,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":75,"nome":"Fogo Paulista","categoria":"Aguardente","operacao":"Bebidas","unidade":"un","custo":0,"preco":0,"estoque":1,"estoqueMin":1,"status":"ativo","tipo":"pronto"},{"id":80,"nome":"Del Valle 1L","categoria":"Suco","operacao":"Bebidas","unidade":"un","custo":6.78,"preco":10,"estoque":4,"estoqueMin":2,"status":"ativo","tipo":"pronto"},{"id":81,"nome":"Água Mineral 510ml","categoria":"Água","operacao":"Bebidas","unidade":"un","custo":0.72,"preco":2.5,"estoque":82,"estoqueMin":24,"status":"ativo","tipo":"pronto"},{"id":82,"nome":"Água Tônica","categoria":"Água","operacao":"Bebidas","unidade":"un","custo":2.65,"preco":5,"estoque":9,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":83,"nome":"Citrus 330ml","categoria":"Refrigerante","operacao":"Bebidas","unidade":"un","custo":1.65,"preco":3.5,"estoque":10,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":85,"nome":"Gelo Comum (saco)","categoria":"Gelo","operacao":"Bebidas","unidade":"saco","custo":2,"preco":5,"estoque":2,"estoqueMin":2,"status":"ativo","tipo":"pronto"},{"id":86,"nome":"Gelo Saborizado Morango","categoria":"Gelo","operacao":"Bebidas","unidade":"un","custo":2,"preco":4,"estoque":16,"estoqueMin":5,"status":"ativo","tipo":"pronto"},{"id":87,"nome":"Gelo Saborizado Melancia","categoria":"Gelo","operacao":"Bebidas","unidade":"un","custo":2,"preco":4,"estoque":12,"estoqueMin":5,"status":"ativo","tipo":"pronto"},{"id":88,"nome":"Gelo Saborizado Maçã Verde","categoria":"Gelo","operacao":"Bebidas","unidade":"un","custo":2,"preco":4,"estoque":10,"estoqueMin":5,"status":"ativo","tipo":"pronto"},{"id":89,"nome":"Gelo Saborizado Maracujá","categoria":"Gelo","operacao":"Bebidas","unidade":"un","custo":2,"preco":4,"estoque":10,"estoqueMin":5,"status":"ativo","tipo":"pronto"},{"id":90,"nome":"Gelo Saborizado Água de Coco","categoria":"Gelo","operacao":"Bebidas","unidade":"un","custo":2,"preco":4,"estoque":11,"estoqueMin":5,"status":"ativo","tipo":"pronto"},{"id":91,"nome":"Halls","categoria":"Doces","operacao":"Bebidas","unidade":"pct","custo":1.46,"preco":2,"estoque":50,"estoqueMin":10,"status":"ativo","tipo":"pronto"},{"id":92,"nome":"Trident","categoria":"Doces","operacao":"Bebidas","unidade":"un","custo":2.08,"preco":2.5,"estoque":11,"estoqueMin":6,"status":"ativo","tipo":"pronto"},{"id":93,"nome":"Fini 15g","categoria":"Doces","operacao":"Bebidas","unidade":"un","custo":0.91,"preco":2,"estoque:13,"estoqueMin":6,"status":"ativo","tipo":"pronto"},{"id":94,"nome":"Jujuba","categoria":"Doces","operacao":"Bebidas","unidade":"un","custo":1,"preco":2,"estoque:4,"estoqueMin":4,"status":"ativo","tipo":"pronto"},{"id":95,"nome":"Seda Natural","categoria":"Acessórios","operacao":"Bebidas","unidade":"pct","custo":3,"preco":4,"estoque:13,"estoqueMin":5,"status":"ativo","tipo":"pronto"},{"id":100,"status":"ativo","nome":"Sub-zero latão","categoria":"Cerveja","operacao":"Bebidas","tipo":"pronto","unidade":"un","custo":3.92,"preco":6,"estoque:32,"estoqueMin":4},{"id":101,"status":"ativo","nome":"Espetinho de Linguiça","categoria":"Espetinho","operacao":"Espetinho","tipo":"produzido","unidade":"un","custo":4.7,"preco":7,"estoque:22,"estoqueMin":5},{"id":102,"status":"ativo","nome":"Espetinho de queijo com mel","categoria":"Espetinho","operacao":"Espetinho","tipo":"produzido","unidade":"un","custo":6,"preco":9,"estoque:3,"estoqueMin":5},{"id":103,"status":"ativo","nome":"Espetinho Romeu e Julieta","categoria":"Espetinho","operacao":"Espetinho","tipo":"produzido","unidade":"un","custo":6,"preco":10,"estoque:1,"estoqueMin":5},{"id":104,"status":"ativo","nome":"Espetinho de Frango com Bacon","categoria":"Espetinho","operacao":"Espetinho","tipo":"produzido","unidade":"un","custo":6.36,"preco":8,"estoque:0,"estoqueMin":5},{"id":105,"status":"ativo","nome":"Espetinho de Carne com Queijo","categoria":"Espetinho","operacao":"Espetinho","tipo":"produzido","unidade":"un","custo":6,"preco":12,"estoque:0,"estoqueMin":5},{"id":106,"status":"ativo","nome":"Espetinho de Coração","categoria":"Espetinho","operacao":"Espetinho","tipo":"produzido","unidade":"un","custo":5,"preco":7,"estoque:0,"estoqueMin":5},{"id":107,"status":"ativo","nome":"Espetinho de Coração com Bacon","categoria":"Espetinho","operacao":"Espetinho","tipo":"produzido","unidade":"un","custo":0,"preco":8,"estoque:0,"estoqueMin":5},{"id":108,"status":"ativo","nome":"Espetinho de Pão de alho","categoria":"Espetinho","operacao":"Espetinho","tipo":"produzido","unidade":"un","custo":3.87,"preco":7,"estoque:0,"estoqueMin":5},{"id":109,"status":"ativo","nome":"dose brejeira","categoria":"dose","operacao":"Bebidas","tipo":"pronto","unidade":"dose","custo":0.6,"preco":2,"estoque:117,"estoqueMin":10},{"id":110,"status":"ativo","nome":"vinho quinta do morgado 750ml","categoria":"bebidas","operacao":"Bebidas","tipo":"pronto","unidade":"un","custo":13.17,"preco":18,"estoque:0,"estoqueMin":1},{"id":111,"status":"ativo","nome":"vinho pergola 1l","categoria":"vinho","operacao":"Bebidas","tipo":"produzido","unidade":"un","custo":20.32,"preco":25,"estoque:1,"estoqueMin":5},{"id":112,"status":"ativo","nome":"dose red label","categoria":"dose","operacao":"Bebidas","tipo":"pronto","unidade":"dose","custo":4.88,"preco":8,"estoque:5,"estoqueMin":5},{"id":113,"status":"ativo","nome":"Copão red label","categoria":"copão","operacao":"Bebidas","tipo":"produzido","unidade":"un","custo":19.15,"preco":30,"estoque":0,"estoqueMin":5}],
+    "vendas": [{"id":3,"data":"2026-04-02","hora":"19:29:41","tipo":"Retirada","pagamento":"Dinheiro","obs":"","total":16,"custo":12.72,"cliente":"","itens":[{"produtoId":104,"nome":"Espetinho de Frango com Bacon","preco":8,"custo":6.36,"qtd":2,"subtotal":16}],"usuario":"Administrador","dt":"2026-04-02T19:29:41.376"},{"id":4,"data":"2026-04-02","hora":"19:34:11","tipo":"Mesa","pagamento":"Dinheiro","obs":"","total":4,"custo":1.2,"cliente":"","itens":[{"produtoId":109,"nome":"dose brejeira","preco":2,"custo":0.6,"qtd":2,"subtotal":4}],"usuario":"Vendedor","dt":"2026-04-02T19:34:11.273"},{"id":5,"data":"2026-04-02","hora":"19:34:55","tipo":"Mesa","pagamento":"Dinheiro","obs":"","total":31,"custo":23.14,"cliente":"MESA 02","itens":[{"produtoId":1,"nome":"Espetinho de Frango","preco":7,"custo":4.9,"qtd":1,"subtotal":7},{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":3,"subtotal":24}],"usuario":"Vendedor","dt":"2026-04-02T19:34:55.409"},{"id":6,"data":"2026-04-02","hora":"19:38:24","tipo":"Retirada","pagamento":"Dinheiro","obs":"","total":8,"custo":6.08,"cliente":"","itens":[{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":1,"subtotal":8}],"usuario":"Vendedor","dt":"2026-04-02T19:38:24.590"},{"id":7,"data":"2026-04-02","hora":"19:42:34","tipo":"Retirada","pagamento":"Pix","obs":"","total":106,"custo":66.78,"cliente":"wanderlei","itens":[{"produtoId":105,"nome":"Espetinho de Carne com Queijo","preco":12,"custo":6,"qtd":2,"subtotal":24},{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":1,"subtotal":8},{"produtoId":18,"nome":"Guaraná 1L","preco":8,"custo":4.32,"qtd":2,"subtotal":16},{"produtoId":1,"nome":"Espetinho de Frango","preco":7,"custo":4.9,"qtd":4,"subtotal":28},{"produtoId":104,"nome":"Espetinho de Frango com Bacon","preco":8,"custo":6.36,"qtd":2,"subtotal":16},{"produtoId":108,"nome":"Espetinho de Pão de alho","preco":7,"custo":3.87,"qtd":2,"subtotal":14}],"usuario":"Vendedor","dt":"2026-04-02T19:42:34.457"},{"id":8,"data":"2026-04-02","hora":"19:55:25","tipo":"Retirada","pagamento":"Dinheiro","obs":"subzero vendida a 5 reais ","total":47,"custo":32.74,"cliente":"","itens":[{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":2,"subtotal":16},{"produtoId":1,"nome":"Espetinho de Frango","preco":7,"custo":4.9,"qtd":1,"subtotal":7},{"produtoId":100,"nome":"Sub-zero latão","preco":6,"custo":3.92,"qtd":4,"subtotal":24}],"usuario":"Vendedor","dt":"2026-04-02T19:55:25.191"},{"id":9,"data":"2026-04-02","hora":"20:01:54","tipo":"Retirada","pagamento":"Dinheiro","obs":"","total":16,"custo":12.16,"cliente":"","itens":[{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":2,"subtotal":16}],"usuario":"Vendedor","dt":"2026-04-02T20:01:54.601"},{"id":10,"data":"2026-04-02","hora":"20:47:19","tipo":"Retirada","pagamento":"Pix","obs":"","total":18,"custo":12.76,"cliente":"","itens":[{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":2,"subtotal":16},{"produtoId":109,"nome":"dose brejeira","preco":2,"custo":0.6,"qtd":1,"subtotal":2}],"usuario":"Vendedor","dt":"2026-04-02T20:47:19.891"},{"id":11,"data":"2026-04-02","hora":"20:49:06","tipo":"Retirada","pagamento":"Dinheiro","obs":"","total":45,"custo":31.4,"cliente":"mesa 3","itens":[{"produtoId":108,"nome":"Espetinho de Pão de alho","preco":7,"custo":3.87,"qtd":1,"subtotal":7},{"produtoId":104,"nome":"Espetinho de Frango com Bacon","preco":8,"custo":6.36,"qtd":1,"subtotal":8},{"produtoId":36,"nome":"Budweiser 350ml","preco":5,"custo":3.4,"qtd":3,"subtotal":15},{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":1,"subtotal":8},{"produtoId":1,"nome":"Espetinho de Frango","preco":7,"custo":4.9,"qtd":1,"subtotal":7}],"usuario":"Vendedor","dt":"2026-04-02T20:49:06.008"},{"id":12,"data":"2026-04-02","hora":"20:50:23","tipo":"Carro/Moto","pagamento":"Dinheiro","obs":"","total":5,"custo":2,"cliente":"","itens":[{"produtoId":85,"nome":"Gelo Comum (saco)","preco":5,"custo":2,"qtd":1,"subtotal":5}],"usuario":"Vendedor","dt":"2026-04-02T20:50:23.401"},{"id":13,"data":"2026-04-02","hora":"20:54:45","tipo":"Mesa","pagamento":"Pix","obs":"","total":25,"custo":20.32,"cliente":"mesa 1 rita","itens":[{"produtoId":111,"nome":"vinho pergola 1l","preco":25,"custo":20.32,"qtd":1,"subtotal":25}],"usuario":"Vendedor","dt":"2026-04-02T20:54:45.113"},{"id":14,"data":"2026-04-02","hora":"21:02:46","tipo":"Retirada","pagamento":"Fiado/Pendente","obs":"","total":8,"custo":5.84,"cliente":"juliete","itens":[{"produtoId":16,"nome":"Coca-Cola 1L Zero","preco":8,"custo":5.84,"qtd":1,"subtotal":8}],"usuario":"Vendedor","dt":"2026-04-02T21:02:46.948"},{"id":15,"data":"2026-04-02","hora":"21:17:36","tipo":"Retirada","pagamento":"Pix","obs":"","total":17.5,"custo":12.03,"cliente":"Pedro","itens":[{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":1,"subtotal":8},{"produtoId":108,"nome":"Espetinho de Pão de alho","preco":7,"custo":3.87,"qtd":1,"subtotal":7},{"produtoId":92,"nome":"Trident","preco":2.5,"custo":2.08,"qtd":1,"subtotal":2.5}],"usuario":"Vendedor","dt":"2026-04-02T21:17:36.012"},{"id":16,"data":"2026-04-02","hora":"21:21:17","tipo":"Retirada","pagamento":"Pix","obs":"","total":20,"custo":13.96,"cliente":"","itens":[{"produtoId":21,"nome":"Coca-Cola Lata Zero","preco":5,"custo":2.98,"qtd":1,"subtotal":5},{"produtoId":1,"nome":"Espetinho de Frango","preco":7,"custo":4.9,"qtd":1,"subtotal":7},{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":1,"subtotal":8}],"usuario":"Vendedor","dt":"2026-04-02T21:21:17.993"},{"id":17,"data":"2026-04-02","hora":"21:43:31","tipo":"Retirada","pagamento":"Pix","obs":"","total":8,"custo":6.08,"cliente":"","itens":[{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":1,"subtotal":8}],"usuario":"Vendedor","dt":"2026-04-02T21:43:31.488"},{"id":18,"data":"2026-04-02","hora":"22:08:56","tipo":"Retirada","pagamento":"Pix","obs":"","total":83,"custo":59.86,"cliente":"mesa 2","itens":[{"produtoId":2,"nome":"Espetinho de Carne","preco":8,"custo":6.08,"qtd":2,"subtotal":16},{"produtoId":104,"nome":"Espetinho de Frango com Bacon","preco":8,"custo":6.36,"qtd":2,"subtotal":16},{"produtoId":108,"nome":"Espetinho de Pão de alho","preco":7,"custo":3.87,"qtd":1,"subtotal":7},{"produtoId":110,"nome":"vinho quinta do morgado 750ml","preco":18,"custo":13.17,"qtd":2,"subtotal":36},{"produtoId":17,"nome":"Coca-Cola KS 1L","preco":8,"custo":4.77,"qtd":1,"subtotal":8}],"usuario":"Vendedor","dt":"2026-04-02T22:08:56.920"},{"id":19,"data":"2026-04-02","hora":"22:40:19","tipo":"Mesa","pagamento":"Dinheiro","obs":"","total":5,"custo":3.21,"cliente":"mesa","itens":[{"produtoId":40,"nome":"Itaipava (unit)","preco":5,"custo":3.21,"qtd":1,"subtotal":5}],"usuario":"Vendedor","dt":"2026-04-02T22:40:19.660"},{"id":20,"data":"2026-04-02","hora":"22:50:18","tipo":"Mesa","pagamento":"Dinheiro","obs":"","total":30,"custo":19.15,"cliente":"galego","itens":[{"produtoId":113,"nome":"Copão red label","preco":30,"custo":19.15,"qtd":1,"subtotal":30}],"usuario":"Vendedor","dt":"2026-04-02T22:50:18.652"},{"id":21,"data":"2026-04-02","hora":"22:58:49","tipo":"Mesa","pagamento":"Dinheiro","obs":"","total":15,"custo":10.01,"cliente":"","itens":[{"produtoId":40,"nome":"Itaipava (unit)","preco":5,"custo":3.21,"qtd":1,"subtotal":5},{"produtoId":36,"nome":"Budweiser 350ml","preco":5,"custo":3.4,"qtd":2,"subtotal":10}],"usuario":"Vendedor","dt":"2026-04-02T22:58:49.499"},{"id":22,"data":"2026-04-02","hora":"23:57:33","tipo":"Mesa","pagamento":"Dinheiro","obs":"","total":8,"custo":6.36,"cliente":"eliane","itens":[{"produtoId":104,"nome":"Espetinho de Frango com Bacon","preco":8,"custo":6.36,"qtd":1,"subtotal":8}],"usuario":"Vendedor","dt":"2026-04-02T23:57:33.080"},{"id":23,"data":"2026-04-03","hora":"00:10:16","tipo":"Mesa","pagamento":"Pix","obs":"","total":5,"custo":3.21,"cliente":"","itens":[{"produtoId":40,"nome":"Itaipava (unit)","preco":5,"custo":3.21,"qtd":1,"subtotal":5}],"usuario":"Vendedor","dt":"2026-04-03T00:10:16.698"}],
+    "compras": [{"id":1,"fornecedor":"Ajaz","data":"2026-03-22","operacao":"Bebidas","pagamento":"Pix","obs":"","total":57.5,"itens":[{"produtoId":5,"produto":"Skol 600ml","qtd":10,"custo":5.75,"total":57.5}],"usuario":"Administrador","dt":"2026-03-22T16:55:16.310"}],
+    "consumos": [{"id":1,"produtoId":1,"produto":"Espetinho de Frango","qtd":2,"motivo":"Consumo interno","obs":"janta","operacao":"Espetinho","data":"2026-04-02","usuario":"Administrador","dt":"2026-04-02T22:14:42.614"},{"id":2,"produtoId":81,"produto":"Água Mineral 510ml","qtd":4,"motivo":"Consumo interno","obs":"","operacao":"Bebidas","data":"2026-04-03","usuario":"Administrador","dt":"2026-04-03T00:27:30.284"},{"id":3,"produtoId":104,"produto":"Espetinho de Frango com Bacon","qtd":1,"motivo":"Consumo interno","obs":"","operacao":"Espetinho","data":"2026-04-03","usuario":"Administrador","dt":"2026-04-03T00:27:55.361"}],
+    "producoes": [{"id":1,"produtoId":1,"produto":"Espetinho de Frango","qtd":10,"obs":"","data":"2026-03-22","usuario":"Administrador","dt":"2026-03-22T16:53:04.299"},{"id":2,"produtoId":2,"produto":"Espetinho de Carne","qtd":4,"obs":"","data":"2026-03-22","usuario":"Administrador","dt":"2026-03-22T16:53:12.766"}],
+    "nextId": {"produto":114,"venda":24,"compra":2,"producao":3,"consumo":4,"caixa":1}
+  };
+
+  try {
+    let currentDB = JSON.parse(localStorage.getItem('convpro_db') || '{}');
+    if (!currentDB.produtos) currentDB = { produtos:[], vendas:[], compras:[], producoes:[], consumos:[], auditoria:[], nextId:{} };
+
+    // 1. Atualizar Produtos (Preços e Custos de ontem)
+    backupData.produtos.forEach(bp => {
+      const idx = currentDB.produtos.findIndex(p => p.id === bp.id);
+      if (idx !== -1) {
+        currentDB.produtos[idx].custo = bp.custo;
+        currentDB.produtos[idx].preco = bp.preco;
+        currentDB.produtos[idx].estoque = bp.estoque;
+      } else {
+        currentDB.produtos.push(bp);
+      }
+    });
+
+    // 2. Mesclar Vendas (Evita duplicados pelo timestamp 'dt')
+    backupData.vendas.forEach(bv => {
+      if (!currentDB.vendas.some(v => v.dt === bv.dt)) {
+        currentDB.vendas.push(bv);
+      }
+    });
+
+    // 3. Mesclar Compras, Produções e Consumos
+    ['compras', 'producoes', 'consumos'].forEach(key => {
+      if (backupData[key]) {
+        backupData[key].forEach(item => {
+          if (!currentDB[key].some(i => i.dt === item.dt)) {
+            currentDB[key].push(item);
+          }
+        });
+      }
+    });
+
+    // 4. Atualizar nextId
+    if (backupData.nextId) {
+      Object.keys(backupData.nextId).forEach(key => {
+        currentDB.nextId[key] = Math.max(currentDB.nextId[key] || 0, backupData.nextId[key]);
+      });
+    }
+
+    // 5. Salvar e Marcar como concluído
+    localStorage.setItem('convpro_db', JSON.stringify(currentDB));
+    localStorage.setItem(MERGE_KEY, 'true');
+
+    currentDB.auditoria.push({
+      id: Date.now(),
+      usuario: 'Sistema',
+      acao: 'RECUPERACAO_BACKUP',
+      detalhes: 'Restauração inteligente de dados de 02/04 realizada com sucesso.',
+      dt: new Date().toISOString()
+    });
+    localStorage.setItem('convpro_db', JSON.stringify(currentDB));
+
+    console.log("✅ Recuperação concluída! Recarregue a página para ver as mudanças.");
+    
+    if (window.DB) {
+      window.DB = currentDB;
+      if (typeof renderDashboard === 'function' && document.getElementById('content')) {
+        setTimeout(() => { location.reload(); }, 2000);
+      }
+    }
+  } catch (e) {
+    console.error("❌ Erro na migração:", e);
+  }
+})();

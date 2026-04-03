@@ -523,25 +523,29 @@ async function sendOrderToSystem() {
     btn.disabled = true;
 
     // 1) Salvar no Google Sheets (para o sininho pegar)
+    let saveOk = false;
     if (GOOGLE_SHEETS_URL) {
         try {
             const d = new Date();
             const localIso = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, -1);
             
             const pedido = {
+                id: Date.now(), // Gera um ID único local para controle
                 cliente: mesaNumber + ' — ' + nomeVal,
                 dtAtualizacao: localIso,
                 obs: obsVal,
                 itens: clientCart
             };
             
-            await fetch(GOOGLE_SHEETS_URL, {
+            const res = await fetch(GOOGLE_SHEETS_URL, {
                 method: 'POST',
                 body: JSON.stringify({ action: 'novo_pedido', pedido }),
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' }
             });
+            if (res.ok) saveOk = true;
         } catch(e) {
             console.error('Erro ao salvar na planilha:', e);
+            showToast('⚠️ Erro ao registrar na nuvem, mas enviando WhatsApp...', 'error');
         }
     }
 
@@ -549,7 +553,11 @@ async function sendOrderToSystem() {
     sendToWhatsApp(nomeVal, obsVal);
 
     // 3) Feedback e limpar carrinho
-    showToast('✅ Pedido enviado com sucesso!', 'success');
+    if (saveOk) {
+        showToast('✅ Pedido enviado com sucesso!', 'success');
+    } else {
+        showToast('📲 WhatsApp aberto! Verifique se enviou a mensagem.', 'info');
+    }
     
     clientCart = [];
     document.getElementById('pedidoNome').value = '';
