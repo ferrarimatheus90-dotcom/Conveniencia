@@ -2050,6 +2050,7 @@ window.mudarDataCaixa = function() {
 
 function renderCaixa(){
   if (!currentCaixaDate) currentCaixaDate = today();
+  console.log('[DEBUG CAIXA] hoje=', currentCaixaDate, '| total vendas no DB=', DB.vendas.length, '| primeiras datas=', DB.vendas.slice(0,5).map(v=>v.data));
   const vendasHoje=DB.vendas.filter(v=>(v.data||'').slice(0,10)===currentCaixaDate);
 
   const totEsp=calcOpTotal(vendasHoje,'Espetinho');
