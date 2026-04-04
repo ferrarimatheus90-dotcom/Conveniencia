@@ -1,0 +1,7 @@
+.kilo/
+node_modules/
+*.zip
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
