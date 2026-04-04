@@ -567,7 +567,7 @@ function finishLogin(user, rem){
           if (updated) {
             DB.produtos = remoteDb.produtos; // Sincroniza estoque e produtos novos
             DB.compras = remoteDb.compras;
-            
+
             // LOGICA INTELIGENTE PARA MESAS: Mesclar em vez de substituir cegamente
             // para não perder pedidos que acabaram de chegar via Polling
             if (remoteDb.mesas_abertas) {
@@ -582,21 +582,41 @@ function finishLogin(user, rem){
             localStorage.setItem('convpro_db', JSON.stringify(DB));
             if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
             if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
-            if (currentPage === 'vendas') renderProdutos_venda(); 
+            if (currentPage === 'vendas') renderProdutos_venda();
           }
         }
       } catch(e){}
     }, 20000); // Verificar a cada 20 segundos
   }
 
+  // Sincronização Automática para Planilha (a cada 30 minutos)
+  if (!window.autoSyncInterval && GOOGLE_SHEETS_URL) {
+    window.autoSyncInterval = setInterval(() => {
+      console.log('Sincronização automática a cada 30 minutos iniciada...');
+      syncToGoogleSheets(); // Envia dados para a nuvem automaticamente
+      showToast('Sincronização automática realizada com a planilha.', 'info');
+    }, 30 * 60 * 1000); // 30 minutos
+  }
+
   navigate('dashboard');
   auditLog('LOGIN','Acesso ao sistema');
+  
+  // Sincronização ao fechar o navegador
+  window.addEventListener('beforeunload', () => {
+    if (GOOGLE_SHEETS_URL) {
+      navigator.sendBeacon(GOOGLE_SHEETS_URL, JSON.stringify({ action: 'sincronizar', db: DB }));
+    }
+  });
+}
+  });
 }
 
 function doLogout(){
   auditLog('LOGOUT','Saiu do sistema');
   currentUser=null;
   if(orderCheckInterval) clearInterval(orderCheckInterval);
+  if(window.bgSyncInterval) clearInterval(window.bgSyncInterval);
+  if(window.autoSyncInterval) clearInterval(window.autoSyncInterval);
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('app').style.display='none';
   const savedLogin = localStorage.getItem('convpro_savedLogin');
@@ -724,6 +744,15 @@ function getLocalISODate() {
   return new Date(d.getTime() - tzOffset).toISOString().slice(0, -1);
 }
 function today(){return getLocalISODate().slice(0,10)}
+function normData(d) {
+  if (!d) return '';
+  d = String(d).split('T')[0];
+  if (d.includes('/')) {
+    const p = d.split('/');
+    if (p.length === 3) return p[2] + '-' + p[1].padStart(2, '0') + '-' + p[0].padStart(2, '0');
+  }
+  return d.slice(0, 10);
+}
 function uid(key){const id=DB.nextId[key]||1;DB.nextId[key]=id+1;return id}
 function escapeHTML(str){
   if(!str)return '';
@@ -1393,7 +1422,7 @@ function renderProducao(){
     <div class="card-title">📊 Produção do Dia – ${new Date().toLocaleDateString('pt-BR')}</div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Produto</th><th>Saldo Inicial</th><th>Produzido Hoje</th><th>Disponível</th><th>Vendido</th><th>Sobra Final</th></tr></thead>
+        <thead><tr><th>Produto</th><th>Saldo Inicial</th><th>Produzido Hoje</th><th>Disponível</th><th>Vendido</th><th>Sobra Final</th><th>Ações</th></tr></thead>
         <tbody>${rows.map(r=>`
           <tr>
             <td><strong>${r.p.nome}</strong></td>
@@ -1402,6 +1431,9 @@ function renderProducao(){
             <td class="mono text-amber">${r.disponivel}</td>
             <td class="mono text-blue">${r.vendHoje}</td>
             <td class="mono ${r.sobra<r.p.estoqueMin?'text-red':''}">${r.sobra}</td>
+            <td>
+              <button class="btn btn-ghost btn-sm" onclick="modalProducaoEdicao('${r.p.id}', ${r.prodHoje})" title="Editar Produção de Hoje">📝</button>
+            </td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -1411,7 +1443,7 @@ function renderProducao(){
     <div class="card-title">Histórico de Produções</div>
     ${DB.producoes.length===0?'<div class="empty-state"><div class="icon">🔥</div>Nenhuma produção registrada</div>':''}
     ${DB.producoes.length?`<div class="table-wrap"><table>
-      <thead><tr><th>Data</th><th>Produto</th><th>Quantidade</th><th>Usuário</th><th>Obs</th></tr></thead>
+      <thead><tr><th>Data</th><th>Produto</th><th>Quantidade</th><th>Usuário</th><th>Obs</th><th>Ações</th></tr></thead>
       <tbody>${DB.producoes.slice(-30).reverse().map(p=>`
         <tr>
           <td>${fmtDate(p.data)}</td>
@@ -1419,25 +1451,30 @@ function renderProducao(){
           <td class="mono text-green">${p.qtd}</td>
           <td>${p.usuario}</td>
           <td class="text-muted">${p.obs||'-'}</td>
+          <td>
+            <button class="btn btn-ghost btn-sm" onclick="modalProducaoEdicao(${p.produtoId}, ${p.qtd}, '${p.id}')" title="Editar">📝</button>
+          </td>
         </tr>`).join('')}
       </tbody>
     </table></div>`:''}
   </div>`;
 }
 
-function modalProducao(){
+function modalProducao(producaoId = null, qtdExistente = 0, produtoId = null){
   const prods=DB.produtos.filter(p=>p.tipo==='produzido'&&p.status==='ativo');
+  const isEdit = !!producaoId;
+  
   openModal(`
-    <div class="modal-title">🔥 Registrar Produção</div>
+    <div class="modal-title">${isEdit ? '📝 Editar Produção' : '🔥 Registrar Produção'}</div>
     <div class="form-group">
       <label class="form-label">Produto</label>
-      <select class="form-control" id="mpProd">
-        ${prods.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('')}
+      <select class="form-control" id="mpProd" ${isEdit ? 'disabled' : ''}>
+        ${prods.map(p=>`<option value="${p.id}" ${isEdit && p.id === produtoId ? 'selected' : ''}>${p.nome}</option>`).join('')}
       </select>
     </div>
     <div class="form-group">
       <label class="form-label">Quantidade Produzida</label>
-      <input type="number" class="form-control" id="mpQtd" value="10" min="1">
+      <input type="number" class="form-control" id="mpQtd" value="${isEdit ? qtdExistente : 10}" min="1">
     </div>
     <div class="form-group">
       <label class="form-label">Observação</label>
@@ -1445,23 +1482,41 @@ function modalProducao(){
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="salvarProducao()">Salvar</button>
+      <button class="btn btn-primary" onclick="salvarProducao('${producaoId || ''}', ${isEdit ? qtdExistente : 0}, ${isEdit ? produtoId : 'null'})">${isEdit ? 'Atualizar Produção' : 'Salvar Produção'}</button>
     </div>`);
 }
 
-function salvarProducao(){
-  const pid=parseInt(document.getElementById('mpProd').value);
-  const qtd=parseInt(document.getElementById('mpQtd').value)||0;
-  const obs=escapeHTML(document.getElementById('mpObs').value);
+window.modalProducaoEdicao = function(produtoId, qtd, producaoId = null) {
+  modalProducao(producaoId, qtd, produtoId);
+}
+
+function salvarProducao(producaoId = '', qtdAntiga = 0, produtoId = null){
+  const pid = producaoId ? produtoId : parseInt(document.getElementById('mpProd').value);
+  const qtd = parseInt(document.getElementById('mpQtd').value)||0;
+  const obs = escapeHTML(document.getElementById('mpObs').value);
+  
   if(!qtd){showToast('Informe a quantidade','error');return;}
-  const p=DB.produtos.find(x=>x.id===pid);
-  const prod={id:uid('producao'),produtoId:pid,produto:p.nome,qtd,obs,data:today(),usuario:currentUser.name,dt:getLocalISODate()};
+  
+  const p = DB.produtos.find(x=>x.id===pid);
+  if(!p) return;
+
+  // Se for edição, primeiro removemos a quantidade antiga do estoque
+  if (producaoId) {
+    const idx = DB.producoes.findIndex(x => x.id == producaoId || (x.produtoId === pid && x.data === today()));
+    if (idx !== -1) {
+      p.estoque -= DB.producoes[idx].qtd;
+      DB.producoes.splice(idx, 1);
+    }
+  }
+
+  const prod = {id: producaoId || uid('producao'), produtoId: pid, produto: p.nome, qtd, obs, data: today(), usuario: currentUser.name, dt: getLocalISODate()};
   DB.producoes.push(prod);
-  p.estoque+=qtd;
+  p.estoque += qtd;
+  
   saveDB();
   auditLog('PRODUCAO',`${p.nome} – ${qtd} un`);
   closeModal();
-  showToast(`Produção registrada: ${qtd} ${p.nome}`,'success');
+  showToast(producaoId ? 'Produção atualizada!' : `Produção registrada: ${qtd} ${p.nome}`,'success');
   navigate('producao');
 }
 
@@ -1470,21 +1525,44 @@ function renderConsumo(){
   return `
   <div class="section-header">
     <div></div>
-    <button class="btn btn-primary" onclick="modalConsumo()">+ Registrar Saída</button>
+    <button class="btn btn-primary" onclick="modalProducao()">+ Registrar Produção</button>
+  </div>
+  <div class="card mb-4">
+    <div class="card-title">📊 Produção do Dia – ${new Date().toLocaleDateString('pt-BR')}</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Produto</th><th>Saldo Inicial</th><th>Produzido Hoje</th><th>Disponível</th><th>Vendido</th><th>Sobra Final</th><th>Ações</th></tr></thead>
+        <tbody>${rows.map(r=>`
+          <tr>
+            <td><strong>${r.p.nome}</strong></td>
+            <td class="mono">${r.saldoInicial}</td>
+            <td class="mono text-green">${r.prodHoje}</td>
+            <td class="mono text-amber">${r.disponivel}</td>
+            <td class="mono text-blue">${r.vendHoje}</td>
+            <td class="mono ${r.sobra<r.p.estoqueMin?'text-red':''}">${r.sobra}</td>
+            <td>
+              <button class="btn btn-ghost btn-sm" onclick="modalProducaoEdicao('${r.p.id}', ${r.prodHoje})" title="Editar Produção de Hoje">📝</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
   </div>
   <div class="card">
-    <div class="card-title">Histórico de Consumo/Saídas Não Comerciais</div>
-    ${DB.consumos.length===0?'<div class="empty-state"><div class="icon">📦</div>Nenhuma saída registrada</div>':''}
-    ${DB.consumos.length?`<div class="table-wrap"><table>
-      <thead><tr><th>Data</th><th>Produto</th><th>Qtd</th><th>Motivo</th><th>Operação</th><th>Usuário</th></tr></thead>
-      <tbody>${DB.consumos.slice(-30).reverse().map(c=>`
+    <div class="card-title">Histórico de Produções</div>
+    ${DB.producoes.length===0?'<div class="empty-state"><div class="icon">🔥</div>Nenhuma produção registrada</div>':''}
+    ${DB.producoes.length?`<div class="table-wrap"><table>
+      <thead><tr><th>Data</th><th>Produto</th><th>Quantidade</th><th>Usuário</th><th>Obs</th><th>Ações</th></tr></thead>
+      <tbody>${DB.producoes.slice(-30).reverse().map(p=>`
         <tr>
-          <td>${fmtDate(c.data)}</td>
-          <td>${c.produto}</td>
-          <td class="mono text-red">-${c.qtd}</td>
-          <td><span class="badge amber">${c.motivo}</span></td>
-          <td>${opTag(c.operacao)}</td>
-          <td>${c.usuario}</td>
+          <td>${fmtDate(p.data)}</td>
+          <td>${p.produto}</td>
+          <td class="mono text-green">${p.qtd}</td>
+          <td>${p.usuario}</td>
+          <td class="text-muted">${p.obs||'-'}</td>
+          <td>
+            <button class="btn btn-ghost btn-sm" onclick="modalProducaoEdicao(${p.produtoId}, ${p.qtd}, '${p.id}')" title="Editar">📝</button>
+          </td>
         </tr>`).join('')}
       </tbody>
     </table></div>`:''}
@@ -1915,8 +1993,11 @@ function renderProdutos(){
     <div></div>
     <button class="btn btn-primary" onclick="modalProduto()">+ Novo Produto</button>
   </div>
+  <div class="card mb-3">
+    <input type="text" id="produtoSearch" class="form-control" placeholder="🔍 Pesquisar produto por nome ou categoria..." oninput="renderProdutosTable()">
+  </div>
   <div class="card">
-    <div class="table-wrap">
+    <div class="table-wrap" id="produtoTableWrap">
       <table>
         <thead><tr><th>Nome</th><th>Categoria</th><th>Operação</th><th>Tipo</th><th>Custo</th><th>Preço</th><th>Estoque</th><th>Status</th><th>Ações</th></tr></thead>
         <tbody>${DB.produtos.map(p=>`
@@ -1938,6 +2019,52 @@ function renderProdutos(){
       </table>
     </div>
   </div>`;
+}
+
+function renderProdutosTable(){
+  const term = (document.getElementById('produtoSearch')?.value || '').toLowerCase().trim();
+  const prods = DB.produtos.filter(p => p.nome.toLowerCase().includes(term) || p.categoria.toLowerCase().includes(term));
+  
+  const html = prods.map(p=>`
+    <tr>
+      <td><strong>${p.nome}</strong></td>
+      <td class="text-muted">${p.categoria}</td>
+      <td>${opTag(p.operacao)}</td>
+      <td><span class="badge ${p.tipo==='produzido'?'amber':'blue'}">${p.tipo==='produzido'?'Produzido':'Pronto'}</span></td>
+      <td class="mono text-muted">${fmt(p.custo)}</td>
+      <td class="mono text-amber">${fmt(p.preco)}</td>
+      <td class="mono ${p.estoque<=p.estoqueMin?'text-red':''}">${p.estoque}</td>
+      <td><span class="badge ${p.status==='ativo'?'green':'red'}">${p.status}</span></td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="modalProduto(${p.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="toggleProduto(${p.id})">${p.status==='ativo'?'⛔':'✅'}</button>
+      </td>
+    </tr>`).join('');
+    
+  document.getElementById('produtoTableWrap').innerHTML = `<table><thead><tr><th>Nome</th><th>Categoria</th><th>Operação</th><th>Tipo</th><th>Custo</th><th>Preço</th><th>Estoque</th><th>Status</th><th>Ações</th></tr></thead><tbody>${html}</tbody></table>`;
+}
+
+function renderProdutosTable(){
+  const term = (document.getElementById('produtoSearch')?.value || '').toLowerCase().trim();
+  const prods = DB.produtos.filter(p => p.nome.toLowerCase().includes(term) || p.categoria.toLowerCase().includes(term));
+  
+  const html = prods.map(p=>`
+    <tr>
+      <td><strong>${p.nome}</strong></td>
+      <td class="text-muted">${p.categoria}</td>
+      <td>${opTag(p.operacao)}</td>
+      <td><span class="badge ${p.tipo==='produzido'?'amber':'blue'}">${p.tipo==='produzido'?'Produzido':'Pronto'}</span></td>
+      <td class="mono text-muted">${fmt(p.custo)}</td>
+      <td class="mono text-amber">${fmt(p.preco)}</td>
+      <td class="mono ${p.estoque<=p.estoqueMin?'text-red':''}">${p.estoque}</td>
+      <td><span class="badge ${p.status==='ativo'?'green':'red'}">${p.status}</span></td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="modalProduto(${p.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="toggleProduto(${p.id})">${p.status==='ativo'?'⛔':'✅'}</button>
+      </td>
+    </tr>`).join('');
+    
+  document.getElementById('produtoTableWrap').innerHTML = `<table><thead><tr><th>Nome</th><th>Categoria</th><th>Operação</th><th>Tipo</th><th>Custo</th><th>Preço</th><th>Estoque</th><th>Status</th><th>Ações</th></tr></thead><tbody>${html}</tbody></table>`;
 }
 
 function modalProduto(id){
@@ -2050,8 +2177,19 @@ window.mudarDataCaixa = function() {
 
 function renderCaixa(){
   if (!currentCaixaDate) currentCaixaDate = today();
-  console.log('[DEBUG CAIXA] hoje=', currentCaixaDate, '| total vendas no DB=', DB.vendas.length, '| primeiras datas=', DB.vendas.slice(0,5).map(v=>v.data));
-  const vendasHoje=DB.vendas.filter(v=>(v.data||'').slice(0,10)===currentCaixaDate);
+  
+  function normData(d) {
+    if (!d) return '';
+    d = String(d).split('T')[0];
+    if (d.includes('/')) {
+      const p = d.split('/');
+      if (p.length === 3) return p[2] + '-' + p[1].padStart(2, '0') + '-' + p[0].padStart(2, '0');
+    }
+    return d.slice(0, 10);
+  }
+
+  const targetDate = normData(currentCaixaDate);
+  const vendasHoje = DB.vendas.filter(v => normData(v.data) === targetDate);
 
   const totEsp=calcOpTotal(vendasHoje,'Espetinho');
   const totBeb=calcOpTotal(vendasHoje,'Bebidas');
