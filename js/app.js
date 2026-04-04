@@ -608,8 +608,6 @@ function finishLogin(user, rem){
     }
   });
 }
-  });
-}
 
 function doLogout(){
   auditLog('LOGOUT','Saiu do sistema');
