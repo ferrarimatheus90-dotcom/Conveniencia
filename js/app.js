@@ -1520,52 +1520,46 @@ function salvarProducao(producaoId = '', qtdAntiga = 0, produtoId = null){
 
 // ===================== CONSUMO INTERNO =====================
 function renderConsumo(){
+  const consumos = (DB.consumos || []).slice().reverse(); // Mais recentes primeiro
+  
   return `
   <div class="section-header">
-    <div></div>
-    <button class="btn btn-primary" onclick="modalProducao()">+ Registrar Produção</button>
+    <div class="section-title">📉 Consumo Interno / Perdas</div>
+    <button class="btn btn-primary" onclick="modalConsumo()">+ Registrar Consumo</button>
   </div>
+  
   <div class="card mb-4">
-    <div class="card-title">📊 Produção do Dia – ${new Date().toLocaleDateString('pt-BR')}</div>
+    <div class="card-title">📋 Últimos Registros de Consumo</div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Produto</th><th>Saldo Inicial</th><th>Produzido Hoje</th><th>Disponível</th><th>Vendido</th><th>Sobra Final</th><th>Ações</th></tr></thead>
-        <tbody>${rows.map(r=>`
+        <thead>
           <tr>
-            <td><strong>${r.p.nome}</strong></td>
-            <td class="mono">${r.saldoInicial}</td>
-            <td class="mono text-green">${r.prodHoje}</td>
-            <td class="mono text-amber">${r.disponivel}</td>
-            <td class="mono text-blue">${r.vendHoje}</td>
-            <td class="mono ${r.sobra<r.p.estoqueMin?'text-red':''}">${r.sobra}</td>
-            <td>
-              <button class="btn btn-ghost btn-sm" onclick="modalProducaoEdicao('${r.p.id}', ${r.prodHoje})" title="Editar Produção de Hoje">📝</button>
-            </td>
-          </tr>`).join('')}
+            <th>Data</th>
+            <th>Produto</th>
+            <th>Quantidade</th>
+            <th>Motivo</th>
+            <th>Usuário</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${consumos.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding: 20px;">Nenhum consumo registrado ainda.</td></tr>' : 
+            consumos.map(c => `
+              <tr>
+                <td>${new Date(c.data).toLocaleString('pt-BR')}</td>
+                <td class="fw-bold">${c.produto}</td>
+                <td><span class="badge bg-warning">${c.qtd}</span></td>
+                <td>${c.motivo || '-'}</td>
+                <td><small>${c.user || 'Desconhecido'}</small></td>
+              </tr>
+            `).join('')
+          }
         </tbody>
       </table>
     </div>
   </div>
-  <div class="card">
-    <div class="card-title">Histórico de Produções</div>
-    ${DB.producoes.length===0?'<div class="empty-state"><div class="icon">🔥</div>Nenhuma produção registrada</div>':''}
-    ${DB.producoes.length?`<div class="table-wrap"><table>
-      <thead><tr><th>Data</th><th>Produto</th><th>Quantidade</th><th>Usuário</th><th>Obs</th><th>Ações</th></tr></thead>
-      <tbody>${DB.producoes.slice(-30).reverse().map(p=>`
-        <tr>
-          <td>${fmtDate(p.data)}</td>
-          <td>${p.produto}</td>
-          <td class="mono text-green">${p.qtd}</td>
-          <td>${p.usuario}</td>
-          <td class="text-muted">${p.obs||'-'}</td>
-          <td>
-            <button class="btn btn-ghost btn-sm" onclick="modalProducaoEdicao(${p.produtoId}, ${p.qtd}, '${p.id}')" title="Editar">📝</button>
-          </td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>`:''}
-  </div>`;
+  `;
 }
+
 
 function modalConsumo(){
   const prods=DB.produtos.filter(p=>p.status==='ativo');
