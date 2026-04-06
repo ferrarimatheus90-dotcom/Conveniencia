@@ -756,7 +756,9 @@ function normData(d) {
   }
   return d.slice(0, 10);
 }
-function uid(key){const id=DB.nextId[key]||1;DB.nextId[key]=id+1;return id}
+function uid(prefix){
+  return Date.now().toString() + Math.random().toString(36).substring(2, 6);
+}
 function escapeHTML(str){
   if(!str)return '';
   return String(str).replace(/[&<>'"]/g, t => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[t]));
@@ -2081,7 +2083,7 @@ function modalProduto(id){
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="salvarProduto(${id||0})">Salvar</button>
+      <button class="btn btn-primary" onclick="salvarProduto('${id||0}')">Salvar</button>
     </div>`);
 }
 
@@ -2098,12 +2100,17 @@ function salvarProduto(id){
     estoqueMin:parseFloat(document.getElementById('ppMin').value)||0,
   };
   if(!data.nome){showToast('Informe o nome','error');return;}
-  if(id){
+  if(id && id !== '0'){
     const p=DB.produtos.find(x=>x.id==id);
-    Object.assign(p,data);
-    auditLog('PRODUTO_EDIT',data.nome);
+    if(p){
+      Object.assign(p,data);
+      auditLog('PRODUTO_EDIT',data.nome);
+    } else {
+      showToast('Produto não encontrado para edição','error');
+      return;
+    }
   } else {
-    DB.produtos.push({id:uid('produto'),status:'ativo',...data});
+    DB.produtos.push({id:uid(),status:'ativo',...data});
     auditLog('PRODUTO_ADD',data.nome);
   }
   saveDB();
