@@ -511,36 +511,22 @@ function doLogin(){
   if(!user){document.getElementById('loginError').style.display='block';return}
   
   document.getElementById('loginError').style.display='none';
-  const btn = document.querySelector('.login-btn');
-  if(btn) { btn.innerHTML = 'Sincronizando Nuvem...'; btn.disabled = true; }
   
-  if (GOOGLE_SHEETS_URL) {
-      try {
-          const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-          const signal = controller ? controller.signal : null;
-          const timeoutId = signal ? setTimeout(() => controller.abort(), 8000) : null;
+  // Entra imediatamente com os dados locais para garantir acesso rápido e sem erros
+  finishLogin(user, rem);
 
-          fetch(GOOGLE_SHEETS_URL + '?action=carregar', { signal })
-            .then(r => r.json())
-            .then(remoteDb => {
-                if (timeoutId) clearTimeout(timeoutId);
-                if (remoteDb && remoteDb.produtos) {
-                    DB = remoteDb;
-                    localStorage.setItem('convpro_db', JSON.stringify(DB));
-                }
-                finishLogin(user, rem);
-            })
-            .catch(e => {
-                if (timeoutId) clearTimeout(timeoutId);
-                console.error("Erro ao puxar dados na nuvem:", e);
-                finishLogin(user, rem);
-            });
-      } catch (e) {
-          console.error("Erro no fluxo de sincronização do login:", e);
-          finishLogin(user, rem);
-      }
-  } else {
-      finishLogin(user, rem);
+  // Faz a sincronização inicial em background logo após entrar
+  if (GOOGLE_SHEETS_URL) {
+      fetch(GOOGLE_SHEETS_URL + '?action=carregar')
+        .then(r => r.json())
+        .then(remoteDb => {
+            if (remoteDb && remoteDb.produtos) {
+                DB = remoteDb;
+                localStorage.setItem('convpro_db', JSON.stringify(DB));
+                // O background sync ja vai atualizar a tela conforme necessário
+                console.log("Banco de dados sincronizado após login.");
+            }
+        }).catch(e => console.error("Erro na sincronização pós-login:", e));
   }
 }
 
