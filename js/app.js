@@ -515,24 +515,30 @@ function doLogin(){
   if(btn) { btn.innerHTML = 'Sincronizando Nuvem...'; btn.disabled = true; }
   
   if (GOOGLE_SHEETS_URL) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos de timeout
+      try {
+          const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+          const signal = controller ? controller.signal : null;
+          const timeoutId = signal ? setTimeout(() => controller.abort(), 8000) : null;
 
-      fetch(GOOGLE_SHEETS_URL + '?action=carregar', { signal: controller.signal })
-        .then(r => r.json())
-        .then(remoteDb => {
-            clearTimeout(timeoutId);
-            if (remoteDb && remoteDb.produtos) {
-                DB = remoteDb;
-                localStorage.setItem('convpro_db', JSON.stringify(DB));
-            }
-            finishLogin(user, rem);
-        })
-        .catch(e => {
-            clearTimeout(timeoutId);
-            console.error("Erro ao puxar dados na nuvem ou timeout:", e);
-            finishLogin(user, rem);
-        });
+          fetch(GOOGLE_SHEETS_URL + '?action=carregar', { signal })
+            .then(r => r.json())
+            .then(remoteDb => {
+                if (timeoutId) clearTimeout(timeoutId);
+                if (remoteDb && remoteDb.produtos) {
+                    DB = remoteDb;
+                    localStorage.setItem('convpro_db', JSON.stringify(DB));
+                }
+                finishLogin(user, rem);
+            })
+            .catch(e => {
+                if (timeoutId) clearTimeout(timeoutId);
+                console.error("Erro ao puxar dados na nuvem:", e);
+                finishLogin(user, rem);
+            });
+      } catch (e) {
+          console.error("Erro no fluxo de sincronização do login:", e);
+          finishLogin(user, rem);
+      }
   } else {
       finishLogin(user, rem);
   }
