@@ -35,7 +35,7 @@ window.addEventListener('DOMContentLoaded', () => {
 const USERS = [
   {id:0,username:'dev',password:'dev@2026',role:'dev',name:'Desenvolvedor'},
   {id:1,username:'admin',password:'Conveniencia@2005#',role:'admin',name:'Administrador'},
-  {id:2,username:'vendedor',password:'Conveniencia@2005#',role:'funcionario',name:'Vendedor'}
+  {id:2,username:'vendedor',password:'vendedor@2026',role:'funcionario',name:'Vendedor'}
 ];
 
 let DB = JSON.parse(localStorage.getItem('convpro_db') || 'null') || {
@@ -2003,8 +2003,9 @@ function renderProdutos(){
             <td class="mono ${p.estoque<=p.estoqueMin?'text-red':''}">${p.estoque}</td>
             <td><span class="badge ${p.status==='ativo'?'green':'red'}">${p.status}</span></td>
             <td>
-              <button class="btn btn-ghost btn-sm" onclick="modalProduto(${p.id})">✏️</button>
-              <button class="btn btn-danger btn-sm" onclick="toggleProduto(${p.id})">${p.status==='ativo'?'⛔':'✅'}</button>
+              <button class="btn btn-ghost btn-sm" onclick="modalProduto(${p.id})" title="Editar">✏️</button>
+              <button class="btn btn-ghost btn-sm" onclick="toggleProduto(${p.id})" title="${p.status==='ativo'?'Inativar':'Ativar'}">${p.status==='ativo'?'⛔':'✅'}</button>
+              <button class="btn btn-danger btn-sm" onclick="excluirProduto(${p.id})" title="Excluir Permanentemente">🗑️</button>
             </td>
           </tr>`).join('')}
         </tbody>
@@ -2028,31 +2029,9 @@ function renderProdutosTable(){
       <td class="mono ${p.estoque<=p.estoqueMin?'text-red':''}">${p.estoque}</td>
       <td><span class="badge ${p.status==='ativo'?'green':'red'}">${p.status}</span></td>
       <td>
-        <button class="btn btn-ghost btn-sm" onclick="modalProduto(${p.id})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="toggleProduto(${p.id})">${p.status==='ativo'?'⛔':'✅'}</button>
-      </td>
-    </tr>`).join('');
-    
-  document.getElementById('produtoTableWrap').innerHTML = `<table><thead><tr><th>Nome</th><th>Categoria</th><th>Operação</th><th>Tipo</th><th>Custo</th><th>Preço</th><th>Estoque</th><th>Status</th><th>Ações</th></tr></thead><tbody>${html}</tbody></table>`;
-}
-
-function renderProdutosTable(){
-  const term = (document.getElementById('produtoSearch')?.value || '').toLowerCase().trim();
-  const prods = DB.produtos.filter(p => p.nome.toLowerCase().includes(term) || p.categoria.toLowerCase().includes(term));
-  
-  const html = prods.map(p=>`
-    <tr>
-      <td><strong>${p.nome}</strong></td>
-      <td class="text-muted">${p.categoria}</td>
-      <td>${opTag(p.operacao)}</td>
-      <td><span class="badge ${p.tipo==='produzido'?'amber':'blue'}">${p.tipo==='produzido'?'Produzido':'Pronto'}</span></td>
-      <td class="mono text-muted">${fmt(p.custo)}</td>
-      <td class="mono text-amber">${fmt(p.preco)}</td>
-      <td class="mono ${p.estoque<=p.estoqueMin?'text-red':''}">${p.estoque}</td>
-      <td><span class="badge ${p.status==='ativo'?'green':'red'}">${p.status}</span></td>
-      <td>
-        <button class="btn btn-ghost btn-sm" onclick="modalProduto(${p.id})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="toggleProduto(${p.id})">${p.status==='ativo'?'⛔':'✅'}</button>
+        <button class="btn btn-ghost btn-sm" onclick="modalProduto(${p.id})" title="Editar">✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleProduto(${p.id})" title="${p.status==='ativo'?'Inativar':'Ativar'}">${p.status==='ativo'?'⛔':'✅'}</button>
+        <button class="btn btn-danger btn-sm" onclick="excluirProduto(${p.id})" title="Excluir Permanentemente">🗑️</button>
       </td>
     </tr>`).join('');
     
@@ -2110,8 +2089,8 @@ function salvarProduto(id){
     unidade:document.getElementById('ppUn').value,
     custo:parseFloat(document.getElementById('ppCusto').value)||0,
     preco:parseFloat(document.getElementById('ppPreco').value)||0,
-    estoque:parseInt(document.getElementById('ppEstoque').value)||0,
-    estoqueMin:parseInt(document.getElementById('ppMin').value)||0,
+    estoque:parseFloat(document.getElementById('ppEstoque').value)||0,
+    estoqueMin:parseFloat(document.getElementById('ppMin').value)||0,
   };
   if(!data.nome){showToast('Informe o nome','error');return;}
   if(id){
@@ -2134,6 +2113,19 @@ function toggleProduto(id){
   if(!confirm(`Tem certeza que deseja ${acao} o produto ${p.nome}?`)) return;
   p.status=p.status==='ativo'?'inativo':'ativo';
   saveDB();
+  navigate('produtos');
+}
+
+function excluirProduto(id){
+  const p=DB.produtos.find(x=>x.id===id);
+  if(!p) return;
+  if(!confirm(`🚨 ATENÇÃO: Tem certeza que deseja EXCLUIR DEFINITIVAMENTE o produto "${p.nome}"?\n\nEsta ação não pode ser desfeita e removerá o item da lista de estoque.`)) return;
+  
+  const idx = DB.produtos.findIndex(x=>x.id===id);
+  DB.produtos.splice(idx, 1);
+  auditLog('PRODUTO_DELETE', p.nome);
+  saveDB();
+  showToast('Produto removido permanentemente!', 'info');
   navigate('produtos');
 }
 
@@ -2281,8 +2273,22 @@ function renderRelatorios(){
     return true;
   });
 
+  const consumosPeriodo = DB.consumos.filter(c => {
+    const d = new Date(c.data);
+    if (periodo === 'hoje') return (c.data || '').slice(0, 10) === hoje;
+    if (periodo === 'semana') return d >= semanaAgo;
+    if (periodo === 'mes') return (c.data || '').slice(0, 7) === hoje.slice(0, 7);
+    return true;
+  });
+
+  const custoConsumo = consumosPeriodo.reduce((s, c) => {
+    const p = DB.produtos.find(x => x.id === c.produtoId);
+    return s + (p && p.custo ? p.custo * c.qtd : 0);
+  }, 0);
+
   const totalVendas=vendas.reduce((s,v)=>s+v.total,0);
-  const custo=vendas.reduce((s,v)=>s+v.custo,0);
+  const custoVendas=vendas.reduce((s,v)=>s+v.custo,0);
+  const custo = custoVendas + custoConsumo; // Inclui perda por consumo interno no custo real
   const lucro=totalVendas-custo;
 
   const tipoMap={};
@@ -2647,9 +2653,9 @@ function imprimirCupom(venda) {
 
   const nomeLoja = "CONVENIÊNCIA OLIVEIRA";
   // O usuário pode mudar aqui depois
-  const cnpj = "00.000.000/0001-00"; 
-  const endereco = "Endereço da Loja, 123"; 
-  const telefone = "(00) 0000-0000";
+  const cnpj = "63.530.569/0001-89"; 
+  const endereco = "Rua Cícero Faustino da Silva 407, Lagoa Seca PB"; 
+  const telefone = "-";
 
   const dataParts = venda.data.split('-');
   const dataFormatada = `${dataParts[2]}/${dataParts[1]}/${dataParts[0]}`;
