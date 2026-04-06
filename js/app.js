@@ -515,9 +515,13 @@ function doLogin(){
   if(btn) { btn.innerHTML = 'Sincronizando Nuvem...'; btn.disabled = true; }
   
   if (GOOGLE_SHEETS_URL) {
-      fetch(GOOGLE_SHEETS_URL + '?action=carregar')
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos de timeout
+
+      fetch(GOOGLE_SHEETS_URL + '?action=carregar', { signal: controller.signal })
         .then(r => r.json())
         .then(remoteDb => {
+            clearTimeout(timeoutId);
             if (remoteDb && remoteDb.produtos) {
                 DB = remoteDb;
                 localStorage.setItem('convpro_db', JSON.stringify(DB));
@@ -525,7 +529,8 @@ function doLogin(){
             finishLogin(user, rem);
         })
         .catch(e => {
-            console.error("Erro ao puxar dados na nuvem:", e);
+            clearTimeout(timeoutId);
+            console.error("Erro ao puxar dados na nuvem ou timeout:", e);
             finishLogin(user, rem);
         });
   } else {
@@ -820,10 +825,10 @@ function renderDashboard(){
   }));
   const rank=Object.entries(rankMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
-  const vendasEsp=vendasHoje.filter(v=>v.operacao==='Espetinho'||v.itens.some(i=>{const p=DB.produtos.find(x=>x.id===i.produtoId);return p?.operacao==='Espetinho'}));
+  const vendasEsp=vendasHoje.filter(v=>v.operacao==='Espetinho'||v.itens.some(i=>{const p=DB.produtos.find(x=>x.id==i.produtoId);return p?.operacao==='Espetinho'}));
   const vendasBeb=vendasHoje.filter(v=>!vendasEsp.includes(v));
-  const totEsp=vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>{const p=DB.produtos.find(x=>x.id===i.produtoId);return p?.operacao==='Espetinho'}).reduce((a,i)=>a+i.subtotal,0),0);
-  const totBeb=vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>{const p=DB.produtos.find(x=>x.id===i.produtoId);return p?.operacao==='Bebidas'}).reduce((a,i)=>a+i.subtotal,0),0);
+  const totEsp=vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>{const p=DB.produtos.find(x=>x.id==i.produtoId);return p?.operacao==='Espetinho'}).reduce((a,i)=>a+i.subtotal,0),0);
+  const totBeb=vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>{const p=DB.produtos.find(x=>x.id==i.produtoId);return p?.operacao==='Bebidas'}).reduce((a,i)=>a+i.subtotal,0),0);
   const abertos = (DB.mesas_abertas || []).length;
   const qtdPedidosHoje = vendasHoje.length + abertos;
 
@@ -912,8 +917,8 @@ function renderDashboard(){
           <td class="text-amber mono">${fmt(v.total)}</td>
           <td>
             <div class="flex" style="gap:4px">
-              <button class="btn btn-ghost btn-sm" onclick="reimprimirVenda(${v.id})" title="Imprimir Cupom">🖨️</button>
-              ${currentUser.role==='admin'||currentUser.role==='dev'?`<button class="btn btn-danger btn-sm" onclick="estornarVenda(${v.id})" title="Estornar/Cancelar Venda">✖</button>`:''}
+              <button class="btn btn-ghost btn-sm" onclick="reimprimirVenda('${v.id}')" title="Imprimir Cupom">🖨️</button>
+              ${currentUser.role==='admin'||currentUser.role==='dev'?`<button class="btn btn-danger btn-sm" onclick="estornarVenda('${v.id}')" title="Estornar/Cancelar Venda">✖</button>`:''}
             </div>
           </td>
         </tr>`).join('')}
@@ -1061,7 +1066,7 @@ function renderProdutos_venda(){
   }
 
   grid.innerHTML=prods.map(p=>`
-    <div class="produto-btn" id="pbtn-${p.id}" onclick="addToCart(${p.id})">
+    <div class="produto-btn" id="pbtn-${p.id}" onclick="addToCart('${p.id}')">
       <div class="p-op">${p.operacao==='Espetinho'?'🔥':'🍺'} ${p.operacao}</div>
       <div class="p-name">${p.nome}</div>
       <div class="p-price">${fmt(p.preco)}</div>
@@ -1069,9 +1074,9 @@ function renderProdutos_venda(){
 }
 
 function addToCart(pid){
-  const p=DB.produtos.find(x=>x.id===pid);
+  const p=DB.produtos.find(x=>x.id==pid);
   if(!p)return;
-  const ex=cart.find(x=>x.produtoId===pid);
+  const ex=cart.find(x=>x.produtoId==pid);
   if(ex)ex.qtd++;
   else cart.push({produtoId:pid,nome:p.nome,preco:p.preco,custo:p.custo,qtd:1,operacao:p.operacao});
   updateCart();
@@ -1403,8 +1408,8 @@ function renderProducao(){
   const vendasHoje=DB.vendas.filter(v=>(v.data||'').slice(0,10)===hoje);
   
   const rows=produzidos.map(p=>{
-    const prodHoje=DB.producoes.filter(x=>x.data===hoje&&x.produtoId===p.id).reduce((s,x)=>s+x.qtd,0);
-    const vendHoje=vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>i.produtoId===p.id).reduce((a,i)=>a+i.qtd,0),0);
+    const prodHoje=DB.producoes.filter(x=>x.data===hoje&&x.produtoId==p.id).reduce((s,x)=>s+x.qtd,0);
+    const vendHoje=vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>i.produtoId==p.id).reduce((a,i)=>a+i.qtd,0),0);
     const saldoInicial=p.estoque-prodHoje+vendHoje; // estoque atual = saldo_ini + produzido - vendido
     const disponivel=saldoInicial+prodHoje;
     const sobra=disponivel-vendHoje;
@@ -1450,7 +1455,7 @@ function renderProducao(){
           <td>${p.usuario}</td>
           <td class="text-muted">${p.obs||'-'}</td>
           <td>
-            <button class="btn btn-ghost btn-sm" onclick="modalProducaoEdicao(${p.produtoId}, ${p.qtd}, '${p.id}')" title="Editar">📝</button>
+            <button class="btn btn-ghost btn-sm" onclick="modalProducaoEdicao('${p.produtoId}', ${p.qtd}, '${p.id}')" title="Editar">📝</button>
           </td>
         </tr>`).join('')}
       </tbody>
@@ -1593,12 +1598,12 @@ function modalConsumo(){
 }
 
 function salvarConsumo(){
-  const pid=parseInt(document.getElementById('mcProd').value);
-  const qtd=parseInt(document.getElementById('mcQtd').value)||0;
+  const pid=document.getElementById('mcProd').value;
+  const qtd=parseFloat(document.getElementById('mcQtd').value)||0;
   const motivo=document.getElementById('mcMotivo').value;
   const obs=escapeHTML(document.getElementById('mcObs').value);
   if(!qtd){showToast('Informe a quantidade','error');return;}
-  const p=DB.produtos.find(x=>x.id===pid);
+  const p=DB.produtos.find(x=>x.id==pid);
   if(['Perda','Quebra','Vencimento'].includes(motivo)){
     if(!confirm(`Confirma o registro de ${qtd} un de ${p.nome} como ${motivo}? Isso baixa o estoque e representa prejuízo.`)) return;
   }
@@ -2003,9 +2008,9 @@ function renderProdutos(){
             <td class="mono ${p.estoque<=p.estoqueMin?'text-red':''}">${p.estoque}</td>
             <td><span class="badge ${p.status==='ativo'?'green':'red'}">${p.status}</span></td>
             <td>
-              <button class="btn btn-ghost btn-sm" onclick="modalProduto(${p.id})" title="Editar">✏️</button>
-              <button class="btn btn-ghost btn-sm" onclick="toggleProduto(${p.id})" title="${p.status==='ativo'?'Inativar':'Ativar'}">${p.status==='ativo'?'⛔':'✅'}</button>
-              <button class="btn btn-danger btn-sm" onclick="excluirProduto(${p.id})" title="Excluir Permanentemente">🗑️</button>
+              <button class="btn btn-ghost btn-sm" onclick="modalProduto('${p.id}')" title="Editar">✏️</button>
+              <button class="btn btn-ghost btn-sm" onclick="toggleProduto('${p.id}')" title="${p.status==='ativo'?'Inativar':'Ativar'}">${p.status==='ativo'?'⛔':'✅'}</button>
+              <button class="btn btn-danger btn-sm" onclick="excluirProduto('${p.id}')" title="Excluir Permanentemente">🗑️</button>
             </td>
           </tr>`).join('')}
         </tbody>
@@ -2029,9 +2034,9 @@ function renderProdutosTable(){
       <td class="mono ${p.estoque<=p.estoqueMin?'text-red':''}">${p.estoque}</td>
       <td><span class="badge ${p.status==='ativo'?'green':'red'}">${p.status}</span></td>
       <td>
-        <button class="btn btn-ghost btn-sm" onclick="modalProduto(${p.id})" title="Editar">✏️</button>
-        <button class="btn btn-ghost btn-sm" onclick="toggleProduto(${p.id})" title="${p.status==='ativo'?'Inativar':'Ativar'}">${p.status==='ativo'?'⛔':'✅'}</button>
-        <button class="btn btn-danger btn-sm" onclick="excluirProduto(${p.id})" title="Excluir Permanentemente">🗑️</button>
+        <button class="btn btn-ghost btn-sm" onclick="modalProduto('${p.id}')" title="Editar">✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleProduto('${p.id}')" title="${p.status==='ativo'?'Inativar':'Ativar'}">${p.status==='ativo'?'⛔':'✅'}</button>
+        <button class="btn btn-danger btn-sm" onclick="excluirProduto('${p.id}')" title="Excluir Permanentemente">🗑️</button>
       </td>
     </tr>`).join('');
     
@@ -2039,7 +2044,7 @@ function renderProdutosTable(){
 }
 
 function modalProduto(id){
-  const p=id?DB.produtos.find(x=>x.id===id):{};
+  const p=id?DB.produtos.find(x=>x.id==id):{};
   openModal(`
     <div class="modal-title">${id?'Editar':'Novo'} Produto</div>
     <div class="form-row cols-2">
@@ -2094,7 +2099,7 @@ function salvarProduto(id){
   };
   if(!data.nome){showToast('Informe o nome','error');return;}
   if(id){
-    const p=DB.produtos.find(x=>x.id===id);
+    const p=DB.produtos.find(x=>x.id==id);
     Object.assign(p,data);
     auditLog('PRODUTO_EDIT',data.nome);
   } else {
@@ -2108,7 +2113,7 @@ function salvarProduto(id){
 }
 
 function toggleProduto(id){
-  const p=DB.produtos.find(x=>x.id===id);
+  const p=DB.produtos.find(x=>x.id==id);
   const acao = p.status === 'ativo' ? 'INATIVAR' : 'ATIVAR';
   if(!confirm(`Tem certeza que deseja ${acao} o produto ${p.nome}?`)) return;
   p.status=p.status==='ativo'?'inativo':'ativo';
@@ -2117,11 +2122,12 @@ function toggleProduto(id){
 }
 
 function excluirProduto(id){
-  const p=DB.produtos.find(x=>x.id===id);
+  const p=DB.produtos.find(x=>x.id==id);
   if(!p) return;
   if(!confirm(`🚨 ATENÇÃO: Tem certeza que deseja EXCLUIR DEFINITIVAMENTE o produto "${p.nome}"?\n\nEsta ação não pode ser desfeita e removerá o item da lista de estoque.`)) return;
   
-  const idx = DB.produtos.findIndex(x=>x.id===id);
+  const idx = DB.produtos.findIndex(x=>x.id==id);
+  if(idx===-1) return;
   DB.produtos.splice(idx, 1);
   auditLog('PRODUTO_DELETE', p.nome);
   saveDB();
@@ -2203,7 +2209,7 @@ function renderCaixa(){
       <div class="flex justify-between mb-2"><span class="text-muted">Custo Estimado</span><span class="mono text-red">${fmt(totEsp.custo)}</span></div>
       <div class="flex justify-between mb-2"><span class="text-muted">Lucro Bruto</span><span class="mono text-green">${fmt(totEsp.total-totEsp.custo)}</span></div>
       <div class="divider"></div>
-      <div class="flex justify-between"><span class="text-muted">Qtd Transações</span><span class="mono">${vendasHoje.filter(v=>v.itens.some(i=>{const p=DB.produtos.find(x=>x.id===i.produtoId);return p?.operacao==='Espetinho'})).length}</span></div>
+      <div class="flex justify-between"><span class="text-muted">Qtd Transações</span><span class="mono">${vendasHoje.filter(v=>v.itens.some(i=>{const p=DB.produtos.find(x=>x.id==i.produtoId);return p?.operacao==='Espetinho'})).length}</span></div>
     </div>
     <div class="card">
       <div class="flex items-center gap-2 mb-3"><span class="op-dot op2"></span><strong style="font-family:'Syne',sans-serif">Bebidas/Bomboniere</strong></div>
@@ -2211,7 +2217,7 @@ function renderCaixa(){
       <div class="flex justify-between mb-2"><span class="text-muted">Custo Estimado</span><span class="mono text-red">${fmt(totBeb.custo)}</span></div>
       <div class="flex justify-between mb-2"><span class="text-muted">Lucro Bruto</span><span class="mono text-green">${fmt(totBeb.total-totBeb.custo)}</span></div>
       <div class="divider"></div>
-      <div class="flex justify-between"><span class="text-muted">Qtd Transações</span><span class="mono">${vendasHoje.filter(v=>v.itens.some(i=>{const p=DB.produtos.find(x=>x.id===i.produtoId);return p?.operacao==='Bebidas'})).length}</span></div>
+      <div class="flex justify-between"><span class="text-muted">Qtd Transações</span><span class="mono">${vendasHoje.filter(v=>v.itens.some(i=>{const p=DB.produtos.find(x=>x.id==i.produtoId);return p?.operacao==='Bebidas'})).length}</span></div>
     </div>
   </div>
 
@@ -2250,7 +2256,7 @@ function calcOpTotal(vendas,op){
   let total=0,custo=0;
   vendas.forEach(v=>{
     v.itens.forEach(i=>{
-      const p=DB.produtos.find(x=>x.id===i.produtoId);
+      const p=DB.produtos.find(x=>x.id==i.produtoId);
       if(p?.operacao===op){total+=i.subtotal;custo+=i.custo*i.qtd;}
     });
   });
@@ -2282,7 +2288,7 @@ function renderRelatorios(){
   });
 
   const custoConsumo = consumosPeriodo.reduce((s, c) => {
-    const p = DB.produtos.find(x => x.id === c.produtoId);
+    const p = DB.produtos.find(x => x.id == c.produtoId);
     return s + (p && p.custo ? p.custo * c.qtd : 0);
   }, 0);
 
@@ -2606,7 +2612,7 @@ function importarBackup(){
 
 // ===================== IMPRESSÃO TÉRMICA (80mm) =====================
 function reimprimirVenda(vendaId) {
-  const venda = DB.vendas.find(v => v.id === vendaId);
+  const venda = DB.vendas.find(v => v.id == vendaId);
   if (venda) {
     imprimirCupom(venda);
   } else {
@@ -2616,7 +2622,7 @@ function reimprimirVenda(vendaId) {
 
 function estornarVenda(id){
   if(!confirm('🚨 ATENÇÃO: Tem certeza que deseja estornar e cancelar esta venda? Os produtos voltarão para o estoque e o valor será removido do caixa. Esta ação é irreversível.')) return;
-  const idx = DB.vendas.findIndex(v=>v.id===id);
+  const idx = DB.vendas.findIndex(v=>v.id==id);
   if(idx===-1) return;
   const v = DB.vendas[idx];
   
@@ -2787,7 +2793,7 @@ document.getElementById('loginUser').addEventListener('keydown',e=>{if(e.key==='
 
     // 1. Atualizar Produtos (Preços e Custos de ontem)
     backupData.produtos.forEach(bp => {
-      const idx = currentDB.produtos.findIndex(p => p.id === bp.id);
+      const idx = currentDB.produtos.findIndex(p => p.id == bp.id);
       if (idx !== -1) {
         currentDB.produtos[idx].custo = bp.custo;
         currentDB.produtos[idx].preco = bp.preco;
