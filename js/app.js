@@ -2209,6 +2209,25 @@ function renderCaixa(){
   vendasHoje.forEach(v=>v.itens.forEach(i=>rankMap[i.nome]=(rankMap[i.nome]||0)+i.qtd));
   const rank=Object.entries(rankMap).sort((a,b)=>b[1]-a[1]);
 
+  // === RESUMO SEMANAL (Últimos 7 dias) ===
+  const dateParts = targetDate.split('-');
+  const targetDateObj = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], 12, 0, 0);
+  const sevenDaysAgo = new Date(targetDateObj);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const sevenDaysAgoStr = normData(sevenDaysAgo.toISOString());
+
+  const vendasSemana = DB.vendas.filter(v => {
+    const vDate = normData(v.data);
+    return vDate >= sevenDaysAgoStr && vDate <= targetDate;
+  });
+
+  const totalSemana = vendasSemana.reduce((s, v) => s + v.total, 0);
+  const rankSemanaMap = {};
+  vendasSemana.forEach(v => v.itens.forEach(i => {
+    rankSemanaMap[i.nome] = (rankSemanaMap[i.nome] || 0) + i.qtd;
+  }));
+  const rankSemana = Object.entries(rankSemanaMap).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
   return `
   <div class="flex items-center justify-between mb-4">
     <div class="flex items-center gap-2">
@@ -2246,7 +2265,7 @@ function renderCaixa(){
         </div>`).join('')}
     </div>
     <div class="card">
-      <div class="card-title">Itens Vendidos</div>
+      <div class="card-title">Itens Vendidos Hoje</div>
       ${rank.slice(0,8).map(([n,q])=>`
         <div class="flex justify-between mb-2">
           <span style="font-size:13px">${n}</span><span class="badge amber">${q} un</span>
@@ -2256,7 +2275,7 @@ function renderCaixa(){
 
   <div class="card">
     <div class="flex justify-between items-center mb-3">
-      <div class="card-title" style="margin:0">Resumo Geral</div>
+      <div class="card-title" style="margin:0">Resumo Geral do Dia</div>
     </div>
     <div class="grid-3">
       <div><div class="stat-label">Total Vendido</div><div class="stat-value text-amber">${fmt(totalGeral)}</div></div>
@@ -2265,6 +2284,56 @@ function renderCaixa(){
     </div>
     ${totalGeral>0?`<div class="progress-bar mt-3"><div class="progress-fill" style="width:${Math.min(100,((totalGeral-custoGeral)/totalGeral*100)).toFixed(0)}%;background:var(--green)"></div></div>
     <div class="text-muted mt-1" style="font-size:12px">Margem bruta: ${((totalGeral-custoGeral)/totalGeral*100).toFixed(1)}%</div>`:''}
+  </div>
+  
+  <div class="card mt-4" style="border-top: 4px solid var(--purple); background: linear-gradient(to bottom right, var(--surface), var(--surface2));">
+    <div class="section-header" style="margin-bottom: 20px;">
+      <div class="card-title" style="margin:0; display:flex; align-items:center; gap:10px;">
+        <span style="font-size:20px;">📅</span> 
+        <div>
+          Resumo da Semana
+          <div style="font-weight:normal; font-size:11px; color:var(--text3); margin-top:2px;">
+            Período: ${fmtDate(sevenDaysAgo.toISOString())} até ${fmtDate(targetDate)}
+          </div>
+        </div>
+      </div>
+      <div class="badge purple">Últimos 7 dias</div>
+    </div>
+
+    <div class="grid-2">
+      <div class="stat-card" style="background:var(--purple-dim); border:1px solid rgba(168,85,247,0.2); padding: 20px;">
+        <div class="stat-label" style="color:var(--purple)">Total Vendido (7d)</div>
+        <div class="stat-value" style="color:var(--purple); font-size: 32px;">${fmt(totalSemana)}</div>
+        <div class="stat-sub" style="color:var(--text2)">${vendasSemana.length} vendas concluídas</div>
+        <div class="progress-bar" style="background:rgba(168,85,247,0.1); margin-top:15px;">
+          <div class="progress-fill" style="width:100%; background:var(--purple)"></div>
+        </div>
+      </div>
+
+      <div class="card" style="background:rgba(255,255,255,0.02); border:1px solid var(--border)">
+        <div class="card-title" style="font-size:13px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text2);">
+          🚀 Top 10 Mais Vendidos
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          ${rankSemana.length ? rankSemana.map(([n, q], idx) => `
+            <div class="flex justify-between items-center">
+              <div class="flex items-center gap-2" style="font-size:13px;">
+                <span style="color:var(--text3); width:18px; font-weight:bold;">${idx+1}º</span>
+                <span style="color:var(--text2)">${n}</span>
+              </div>
+              <span class="badge purple" style="font-size:10px;">${q} un</span>
+            </div>`).join('') : '<div class="text-muted" style="padding:20px; text-align:center;">Nenhuma venda no período</div>'}
+        </div>
+      </div>
+    </div>
+    
+    <div class="alert info mt-3" style="background:rgba(168,85,247,0.05); border-left:4px solid var(--purple); display:flex; align-items:center; gap:12px; padding:15px;">
+      <span style="font-size:24px;">💡</span>
+      <div style="font-size:13px; line-height:1.4;">
+        <strong>Dica de Reabastecimento:</strong> Os produtos acima são os seus campeões de vendas na última semana. 
+        Considere aumentar o estoque destes itens para garantir que não faltem nos próximos dias.
+      </div>
+    </div>
   </div>`;
 }
 
