@@ -2090,6 +2090,7 @@ function modalProduto(id){
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      ${id ? `<button class="btn btn-danger" onclick="excluirProduto('${id}')">Excluir Produto</button>` : ''}
       <button class="btn btn-primary" onclick="salvarProduto('${id||0}')">Salvar</button>
     </div>`);
 }
