@@ -28,7 +28,22 @@ window.addEventListener('DOMContentLoaded', () => {
       if (document.getElementById('loginPass')) document.getElementById('loginPass').value = data.p || '';
       if (document.getElementById('loginRemember')) document.getElementById('loginRemember').checked = true;
       setTimeout(doLogin, 300); // Auto login para puxar atualizado assim que abrir!
-    } catch(e) {}
+      
+      // AUTO-REPARO DE IDs DUPLICADOS (devido ao bug de precisão de versões anteriores)
+      const idsCache = new Set();
+      let fixedCount = 0;
+      DB.produtos.forEach(p => {
+        if (idsCache.has(String(p.id))) {
+          p.id = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+          fixedCount++;
+        }
+        idsCache.add(String(p.id));
+      });
+      if (fixedCount > 0) {
+          console.warn(`[REPARO] ${fixedCount} IDs duplicados foram corrigidos.`);
+          saveDB();
+      }
+    } catch(e) { console.error("Erro no auto-reparo:", e); }
   }
 });
 
@@ -2112,7 +2127,8 @@ function salvarProduto(id){
 }
 
 function toggleProduto(id){
-  const p=DB.produtos.find(x=>x.id==id);
+  const p=DB.produtos.find(x=>String(x.id)===String(id));
+  if(!p) return;
   const acao = p.status === 'ativo' ? 'INATIVAR' : 'ATIVAR';
   if(!confirm(`Tem certeza que deseja ${acao} o produto ${p.nome}?`)) return;
   p.status=p.status==='ativo'?'inativo':'ativo';
@@ -2121,11 +2137,11 @@ function toggleProduto(id){
 }
 
 function excluirProduto(id){
-  const p=DB.produtos.find(x=>x.id==id);
+  const p=DB.produtos.find(x=>String(x.id)===String(id));
   if(!p) return;
   if(!confirm(`🚨 ATENÇÃO: Tem certeza que deseja EXCLUIR DEFINITIVAMENTE o produto "${p.nome}"?\n\nEsta ação não pode ser desfeita e removerá o item da lista de estoque.`)) return;
   
-  const idx = DB.produtos.findIndex(x=>x.id==id);
+  const idx = DB.produtos.findIndex(x=>String(x.id)===String(id));
   if(idx===-1) return;
   DB.produtos.splice(idx, 1);
   auditLog('PRODUTO_DELETE', p.nome);
