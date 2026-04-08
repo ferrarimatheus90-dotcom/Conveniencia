@@ -2222,6 +2222,9 @@ function renderCaixa(){
   });
 
   const totalSemana = vendasSemana.reduce((s, v) => s + v.total, 0);
+  const custoSemana = vendasSemana.reduce((s, v) => s + v.itens.reduce((si, i) => si + (i.custo || 0) * i.qtd, 0), 0);
+  const lucroSemana = totalSemana - custoSemana;
+  const margemSemana = totalSemana > 0 ? (lucroSemana / totalSemana * 100) : 0;
   const rankSemanaMap = {};
   vendasSemana.forEach(v => v.itens.forEach(i => {
     rankSemanaMap[i.nome] = (rankSemanaMap[i.nome] || 0) + i.qtd;
@@ -2307,6 +2310,16 @@ function renderCaixa(){
         <div class="stat-sub" style="color:var(--text2)">${vendasSemana.length} vendas concluídas</div>
         <div class="progress-bar" style="background:rgba(168,85,247,0.1); margin-top:15px;">
           <div class="progress-fill" style="width:100%; background:var(--purple)"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:12px; border-top:1px solid rgba(168,85,247,0.2);">
+          <div>
+            <div class="stat-label" style="color:var(--text3); font-size:10px;">LUCRO SEMANAL</div>
+            <div style="font-size:18px; font-weight:700; color:${lucroSemana>=0?'var(--green)':'var(--red)'};">${fmt(lucroSemana)}</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="stat-label" style="color:var(--text3); font-size:10px;">MARGEM</div>
+            <div style="font-size:18px; font-weight:700; color:${margemSemana>=30?'var(--green)':margemSemana>=15?'var(--amber)':'var(--red)'};">${margemSemana.toFixed(1)}%</div>
+          </div>
         </div>
       </div>
 
