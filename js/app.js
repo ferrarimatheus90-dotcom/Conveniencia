@@ -1518,21 +1518,39 @@ function salvarProducao(producaoId = '', qtdAntiga = 0, produtoId = null){
 
 // ===================== CONSUMO INTERNO =====================
 function renderConsumo(){
-  const consumos = (DB.consumos || []).slice().reverse(); // Mais recentes primeiro
+  const consumos = (DB.consumos || []).slice().reverse();
   
+  // Agendar criação do gráfico após renderizar o HTML
+  setTimeout(() => initChartConsumo(), 100);
+
   return `
   <div class="section-header">
     <div class="section-title">📉 Consumo Interno / Perdas</div>
     <button class="btn btn-primary" onclick="modalConsumo()">+ Registrar Consumo</button>
   </div>
+
+  <div class="grid-2 mb-4">
+    <div class="card">
+        <div class="card-title">📊 Evolução nos Últimos 15 Dias</div>
+        <div style="height: 250px; position: relative;">
+            <canvas id="chartConsumo"></canvas>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title">🔍 Resumo por Motivo</div>
+        <div style="height: 250px; position: relative;">
+            <canvas id="chartMotivo"></canvas>
+        </div>
+    </div>
+  </div>
   
   <div class="card mb-4">
-    <div class="card-title">📋 Últimos Registros de Consumo</div>
+    <div class="card-title">📋 Últimos Registros</div>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Data</th>
+            <th>Data/Hora</th>
             <th>Produto</th>
             <th>Quantidade</th>
             <th>Motivo</th>
@@ -1543,11 +1561,11 @@ function renderConsumo(){
           ${consumos.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding: 20px;">Nenhum consumo registrado ainda.</td></tr>' : 
             consumos.map(c => `
               <tr>
-                <td>${new Date(c.data).toLocaleString('pt-BR')}</td>
+                <td style="font-size:12px;">${new Date(c.dt || c.data).toLocaleString('pt-BR')}</td>
                 <td class="fw-bold">${c.produto}</td>
-                <td><span class="badge bg-warning">${c.qtd}</span></td>
+                <td><span class="badge ${c.motivo === 'Perda' || c.motivo === 'Quebra' || c.motivo === 'Vencimento' ? 'bg-danger' : 'bg-warning'}">${c.qtd}</span></td>
                 <td>${c.motivo || '-'}</td>
-                <td><small>${c.user || 'Desconhecido'}</small></td>
+                <td><small>${c.usuario || c.user || '-'}</small></td>
               </tr>
             `).join('')
           }
@@ -1556,6 +1574,67 @@ function renderConsumo(){
     </div>
   </div>
   `;
+}
+
+function initChartConsumo() {
+    const ctxTotal = document.getElementById('chartConsumo');
+    const ctxMotivo = document.getElementById('chartMotivo');
+    if (!ctxTotal || !ctxMotivo || typeof Chart === 'undefined') return;
+
+    // 1. Processar dados para gráfico de barras por dia (últimos 15 dias)
+    const ultimos15Dias = [];
+    for (let i = 14; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        ultimos15Dias.push(d.toISOString().slice(0, 10));
+    }
+
+    const dataConsumo = ultimos15Dias.map(dia => {
+        return DB.consumos.filter(c => normData(c.data) === dia && !['Perda', 'Quebra', 'Vencimento'].includes(c.motivo))
+                          .reduce((s, c) => s + c.qtd, 0);
+    });
+
+    const dataPerdas = ultimos15Dias.map(dia => {
+        return DB.consumos.filter(c => normData(c.data) === dia && ['Perda', 'Quebra', 'Vencimento'].includes(c.motivo))
+                          .reduce((s, c) => s + c.qtd, 0);
+    });
+
+    new Chart(ctxTotal, {
+        type: 'bar',
+        data: {
+            labels: ultimos15Dias.map(d => d.split('-').reverse().slice(0, 2).join('/')),
+            datasets: [
+                { label: 'Consumo', data: dataConsumo, backgroundColor: '#f59e0b' },
+                { label: 'Perdas/Quebras', data: dataPerdas, backgroundColor: '#ef4444' }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { grid: { display: false } } },
+            plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8' } } }
+        }
+    });
+
+    // 2. Gráfico de Pizza por Motivo
+    const motivosMap = {};
+    DB.consumos.forEach(c => motivosMap[c.motivo] = (motivosMap[c.motivo] || 0) + c.qtd);
+    
+    new Chart(ctxMotivo, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(motivosMap),
+            datasets: [{
+                data: Object.values(motivosMap),
+                backgroundColor: ['#f59e0b', '#ef4444', '#10b981', '#6366f1', '#ec4899', '#8b5cf6']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'right', labels: { color: '#94a3b8' } } }
+        }
+    });
 }
 
 
