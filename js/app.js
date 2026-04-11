@@ -531,15 +531,17 @@ function doLogin(){
   finishLogin(user, rem);
 
   // Faz a sincronização inicial em background logo após entrar
+  // Faz a sincronização inicial em background logo após entrar (MESCLANDO, NÃO SOBRESCREVENDO)
   if (GOOGLE_SHEETS_URL) {
       fetch(GOOGLE_SHEETS_URL + '?action=carregar')
         .then(r => r.json())
         .then(remoteDb => {
-            if (remoteDb && remoteDb.produtos) {
-                DB = remoteDb;
-                localStorage.setItem('convpro_db', JSON.stringify(DB));
-                // O background sync ja vai atualizar a tela conforme necessário
-                console.log("Banco de dados sincronizado após login.");
+            const hasUpdates = mergeRemoteDB(remoteDb);
+            if (hasUpdates) {
+                console.log("Banco de dados mesclado com a nuvem após login.");
+                // Se estiver em uma tela que depende desses dados, atualiza
+                if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
+                if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
             }
         }).catch(e => console.error("Erro na sincronização pós-login:", e));
   }
@@ -569,33 +571,12 @@ function finishLogin(user, rem){
       try {
         const res = await fetch(GOOGLE_SHEETS_URL + '?action=carregar');
         const remoteDb = await res.json();
-        if (remoteDb && remoteDb.produtos) {
-          let updated = false;
-          // Puxando vendas que outros PCs fizeram
-          (remoteDb.vendas || []).forEach(rv => {
-            if (!DB.vendas.find(v => v.id === rv.id)) { DB.vendas.push(rv); updated = true; }
-          });
-          // Se tiver atualização importante da nuvem
-          if (updated) {
-            DB.produtos = remoteDb.produtos; // Sincroniza estoque e produtos novos
-            DB.compras = remoteDb.compras;
-
-            // LOGICA INTELIGENTE PARA MESAS: Mesclar em vez de substituir cegamente
-            // para não perder pedidos que acabaram de chegar via Polling
-            if (remoteDb.mesas_abertas) {
-              const mesasAtuais = DB.mesas_abertas || [];
-              remoteDb.mesas_abertas.forEach(rm => {
-                const ex = mesasAtuais.find(m => m.cliente === rm.cliente);
-                if (!ex) { mesasAtuais.push(rm); }
-              });
-              DB.mesas_abertas = mesasAtuais;
-            }
-
-            localStorage.setItem('convpro_db', JSON.stringify(DB));
-            if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
-            if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
-            if (currentPage === 'vendas') renderProdutos_venda();
-          }
+        
+        const hasUpdates = mergeRemoteDB(remoteDb);
+        if (hasUpdates) {
+          if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
+          if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
+          if (currentPage === 'vendas') renderProdutos_venda();
         }
       } catch(e){}
     }, 20000); // Verificar a cada 20 segundos
@@ -797,11 +778,20 @@ function opTag(op){
 
 // ===================== DASHBOARD =====================
 function renderDashboard(){
-  const vendasHoje=DB.vendas.filter(v=>(v.data||'').slice(0,10)===today());
-  const totalHoje=vendasHoje.reduce((s,v)=>s+v.total,0);
-  const custoHoje=vendasHoje.reduce((s,v)=>s+v.custo,0);
-  const lucroHoje=totalHoje-custoHoje;
-  const totalVendasMes=DB.vendas.filter(v=>(v.data||'').slice(0,7)===today().slice(0,7)).reduce((s,v)=>s+v.total,0);
+  const vendasHoje = DB.vendas.filter(v => (v.data || '').slice(0, 10) === today());
+  const totalHoje = vendasHoje.reduce((s, v) => s + v.total, 0);
+  const custoHoje = vendasHoje.reduce((s, v) => s + v.custo, 0);
+  
+  // === Novas Métricas: Consumo/Quebra do Dia ===
+  const consumoHoje = (DB.consumos || []).filter(c => c.data === today());
+  const custoConsumoHoje = consumoHoje.reduce((s, c) => {
+    const p = DB.produtos.find(x => x.id === c.produtoId);
+    return s + (p && p.custo ? p.custo * c.qtd : 0);
+  }, 0);
+  const qtdConsumo = consumoHoje.reduce((s, c) => s + c.qtd, 0);
+
+  const lucroHoje = totalHoje - custoHoje - custoConsumoHoje;
+  const totalVendasMes = DB.vendas.filter(v=>(v.data||'').slice(0,7)===today().slice(0,7)).reduce((s,v)=>s+v.total,0);
 
   const produtosAlerta=DB.produtos.filter(p=>p.status==='ativo'&&p.estoque<=p.estoqueMin);
 
@@ -820,13 +810,7 @@ function renderDashboard(){
     if (qtd > maxVendasHora) { maxVendasHora = qtd; picoHora = `${h}h`; }
   }
 
-  // === Novas Métricas: Consumo/Quebra do Dia ===
-  const consumoHoje = (DB.consumos || []).filter(c => c.data === today());
-  const custoConsumoHoje = consumoHoje.reduce((s, c) => {
-    const p = DB.produtos.find(x => x.id === c.produtoId);
-    return s + (p && p.custo ? p.custo * c.qtd : 0);
-  }, 0);
-  const qtdConsumo = consumoHoje.reduce((s, c) => s + c.qtd, 0);
+  // Blocos de consumo já calculados acima para o lucroHoje
 
   const rankMap={};
   vendasHoje.forEach(v=>v.itens.forEach(i=>{
@@ -2200,7 +2184,16 @@ function renderCaixa(){
   const totEsp=calcOpTotal(vendasHoje,'Espetinho');
   const totBeb=calcOpTotal(vendasHoje,'Bebidas');
   const totalGeral=vendasHoje.reduce((s,v)=>s+v.total,0);
-  const custoGeral=vendasHoje.reduce((s,v)=>s+v.custo,0);
+  const custoVendas=vendasHoje.reduce((s,v)=>s+v.custo,0);
+
+  // Calcular Consumo do Dia selecionado
+  const consumosHoje = (DB.consumos || []).filter(v => normData(v.data) === targetDate);
+  const custoConsumo = consumosHoje.reduce((s, c) => {
+    const p = DB.produtos.find(x => x.id === c.produtoId);
+    return s + (p && p.custo ? p.custo * c.qtd : 0);
+  }, 0);
+
+  const lucroFinal = totalGeral - custoVendas - custoConsumo;
 
   const pagMap={Pix:0,Dinheiro:0,'Cartão Débito':0,'Cartão Crédito':0};
   vendasHoje.forEach(v=>pagMap[v.pagamento]=(pagMap[v.pagamento]||0)+v.total);
@@ -2223,7 +2216,18 @@ function renderCaixa(){
 
   const totalSemana = vendasSemana.reduce((s, v) => s + v.total, 0);
   const custoSemana = vendasSemana.reduce((s, v) => s + v.itens.reduce((si, i) => si + (i.custo || 0) * i.qtd, 0), 0);
-  const lucroSemana = totalSemana - custoSemana;
+  
+  // CORREÇÃO: Calcular Consumo da Semana (para debitar no lucro semanal)
+  const consumosSemana = (DB.consumos || []).filter(c => {
+    const cDate = normData(c.data);
+    return cDate >= sevenDaysAgoStr && cDate <= targetDate;
+  });
+  const custoConsumoSemana = consumosSemana.reduce((s, c) => {
+    const p = DB.produtos.find(x => x.id === c.produtoId);
+    return s + (p && p.custo ? p.custo * c.qtd : 0);
+  }, 0);
+
+  const lucroSemana = totalSemana - custoSemana - custoConsumoSemana;
   const margemSemana = totalSemana > 0 ? (lucroSemana / totalSemana * 100) : 0;
   const rankSemanaMap = {};
   vendasSemana.forEach(v => v.itens.forEach(i => {
@@ -2282,11 +2286,14 @@ function renderCaixa(){
     </div>
     <div class="grid-3">
       <div><div class="stat-label">Total Vendido</div><div class="stat-value text-amber">${fmt(totalGeral)}</div></div>
-      <div><div class="stat-label">Custo Total</div><div class="stat-value text-red">${fmt(custoGeral)}</div></div>
-      <div><div class="stat-label">Lucro Bruto</div><div class="stat-value text-green">${fmt(totalGeral-custoGeral)}</div></div>
+      <div><div class="stat-label">Custo Vendas + Consumo</div><div class="stat-value text-red">${fmt(custoVendas + custoConsumo)}</div></div>
+      <div><div class="stat-label">Lucro Líquido</div><div class="stat-value text-green">${fmt(lucroFinal)}</div></div>
     </div>
-    ${totalGeral>0?`<div class="progress-bar mt-3"><div class="progress-fill" style="width:${Math.min(100,((totalGeral-custoGeral)/totalGeral*100)).toFixed(0)}%;background:var(--green)"></div></div>
-    <div class="text-muted mt-1" style="font-size:12px">Margem bruta: ${((totalGeral-custoGeral)/totalGeral*100).toFixed(1)}%</div>`:''}
+    <div style="font-size: 11px; color: var(--text3); margin-top: 5px;">
+        (Custo Vendas: ${fmt(custoVendas)} | Despesa Consumo: ${fmt(custoConsumo)})
+    </div>
+    ${totalGeral > 0 ? `<div class="progress-bar mt-3"><div class="progress-fill" style="width:${Math.min(100, (lucroFinal / totalGeral * 100)).toFixed(0)}%;background:var(--green)"></div></div>
+    <div class="text-muted mt-1" style="font-size:12px">Margem real: ${(lucroFinal / totalGeral * 100).toFixed(1)}%</div>` : ''}
   </div>
   
   <div class="card mt-4" style="border-top: 4px solid var(--purple); background: linear-gradient(to bottom right, var(--surface), var(--surface2));">
@@ -2652,11 +2659,10 @@ async function puxarDoGoogleSheets() {
    try {
       const res = await fetch(GOOGLE_SHEETS_URL + "?action=carregar");
       const remoteDb = await res.json();
-      if(remoteDb && remoteDb.produtos && remoteDb.produtos.length >= 0) {
-         // Salva dados baixados ignorando o sync original na rodada (pra não subir de volta o vazio enquanto desce)
-         DB = remoteDb;
-         localStorage.setItem('convpro_db',JSON.stringify(DB));
-         showToast('Carga concluída! Atualizando sistema...', 'success');
+      if(remoteDb && remoteDb.produtos) {
+         // Mescla em vez de substituir cegamente para segurança
+         mergeRemoteDB(remoteDb);
+         showToast('Sincronização concluída! Atualizando sistema...', 'success');
          setTimeout(() => location.reload(), 1500);
       } else {
          showToast('Carga não reconheceu Produtos. A planilha existe?', 'error');
