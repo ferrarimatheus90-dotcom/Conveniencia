@@ -735,6 +735,37 @@ function getLocalISODate() {
   return new Date(d.getTime() - tzOffset).toISOString().slice(0, -1);
 }
 function today(){return getLocalISODate().slice(0,10)}
+
+// =================== DIA COMERCIAL (TURNO NOTURNO) ===================
+// Se passar da meia-noite mas ainda for antes de 06:00, considera o dia anterior
+// pois o turno noturno (qui 18h → sex 01h) ainda pertence ao dia de quinta.
+const BUSINESS_DAY_CUTOFF_HOUR = 6; // Horas após meia-noite que ainda são "turno da noite"
+let _nightModeOverride = null; // null = auto, string 'auto' = forçado auto, string 'YYYY-MM-DD' = forçado manual
+
+function getBusinessDay() {
+  const d = new Date();
+  const hour = d.getHours();
+  // Se for entre meia-noite e 06:00 (exclusive), voltamos 1 dia
+  if (hour >= 0 && hour < BUSINESS_DAY_CUTOFF_HOUR) {
+    const yesterday = new Date(d);
+    yesterday.setDate(d.getDate() - 1);
+    const tzOffset = yesterday.getTimezoneOffset() * 60000;
+    return new Date(yesterday.getTime() - tzOffset).toISOString().slice(0, 10);
+  }
+  return today();
+}
+
+function isNightShift() {
+  const hour = new Date().getHours();
+  return hour >= 0 && hour < BUSINESS_DAY_CUTOFF_HOUR;
+}
+
+// Retorna o dia a usar nas vendas e no caixa
+function getEffectiveDay() {
+  if (_nightModeOverride && _nightModeOverride !== 'auto') return _nightModeOverride;
+  return getBusinessDay();
+}
+
 function normData(d) {
   if (!d) return '';
   d = String(d).split('T')[0];
@@ -1252,7 +1283,7 @@ function finalizarVenda(OverridePag, mistoJson){
   const total=cart.reduce((s,i)=>s+i.preco*i.qtd,0);
   const custo=cart.reduce((s,i)=>s+i.custo*i.qtd,0);
   const venda={
-    id:uid('venda'),data:today(),hora:new Date().toLocaleTimeString('pt-BR'),
+    id:uid('venda'),data:getEffectiveDay(),hora:new Date().toLocaleTimeString('pt-BR'),
     tipo,pagamento:pag,obs,total,custo,cliente,
     itens:cart.map(i=>({produtoId:i.produtoId,nome:i.nome,preco:i.preco,custo:i.custo,qtd:i.qtd,subtotal:i.preco*i.qtd})),
     usuario:currentUser.name,dt:getLocalISODate(),
@@ -1679,7 +1710,7 @@ function salvarConsumo(){
   if(['Perda','Quebra','Vencimento'].includes(motivo)){
     if(!confirm(`Confirma o registro de ${qtd} un de ${p.nome} como ${motivo}? Isso baixa o estoque e representa prejuízo.`)) return;
   }
-  const c={id:uid('consumo'),produtoId:pid,produto:p.nome,qtd,motivo,obs,operacao:p.operacao,data:today(),usuario:currentUser.name,dt:getLocalISODate()};
+  const c={id:uid('consumo'),produtoId:pid,produto:p.nome,qtd,motivo,obs,operacao:p.operacao,data:getEffectiveDay(),usuario:currentUser.name,dt:getLocalISODate()};
   DB.consumos.push(c);
   p.estoque=Math.max(0,p.estoque-qtd);
   saveDB();
@@ -2245,8 +2276,34 @@ window.mudarDataCaixa = function() {
 };
 
 function renderCaixa(){
-  if (!currentCaixaDate) currentCaixaDate = today();
+  if (!currentCaixaDate) currentCaixaDate = getEffectiveDay();
   
+  // Banner turno noturno
+  const isNight = isNightShift();
+  const effectiveDay = getEffectiveDay();
+  const nightBannerHtml = isNight ? `
+  <div onclick="window._toggleNightMode && window._toggleNightMode()" style="
+    background: linear-gradient(135deg, rgba(234,179,8,0.12), rgba(234,179,8,0.05));
+    border: 1px solid rgba(234,179,8,0.35); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 14px; cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  ">
+    <div style="display:flex; align-items:center; gap: 10px;">
+      <span style="font-size:20px;">🌙</span>
+      <div>
+        <div style="font-size:12px; font-weight:700; color: var(--amber);">TURNO NOTURNO ATIVO</div>
+        <div style="font-size:11px; color: var(--text2);">Registrando vendas em <strong>${new Date(effectiveDay + 'T12:00').toLocaleDateString('pt-BR')}</strong>. Passando da meia-noite — data mantida até 06h.</div>
+      </div>
+    </div>
+    <button style="
+      font-size:10px; padding:4px 10px; border-radius:6px; border:1px solid rgba(234,179,8,0.5);
+      background: rgba(234,179,8,0.1); color: var(--amber); cursor:pointer; white-space:nowrap;
+      font-weight:600;
+    " onclick="event.stopPropagation();window._toggleNightMode && window._toggleNightMode()">
+      ${_nightModeOverride === today() ? '🔄 Voltar ao auto' : '📅 Usar data real (' + new Date().toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit'}) + ')'}
+    </button>
+  </div>` : '';
+
   function normData(d) {
     if (!d) return '';
     d = String(d).split('T')[0];
@@ -2281,25 +2338,50 @@ function renderCaixa(){
   vendasHoje.forEach(v=>v.itens.forEach(i=>rankMap[i.nome]=(rankMap[i.nome]||0)+i.qtd));
   const rank=Object.entries(rankMap).sort((a,b)=>b[1]-a[1]);
 
-  // === RESUMO SEMANAL (Últimos 7 dias) ===
+  // === RESUMO SEMANAL (Quinta a Segunda-feira) ===
+  // Semana de trabalho: Qui(4) → Seg(1), considerando que Seg pertence à semana anterior
+  // Ex: se hoje é Segunda (1), a semana atual vai de Qui passada até Segunda de hoje
+  // Ex: se hoje é Quinta (4), a semana atual vai de Qui de hoje até próxima Segunda
   const dateParts = targetDate.split('-');
   const targetDateObj = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], 12, 0, 0);
-  const sevenDaysAgo = new Date(targetDateObj);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-  const sevenDaysAgoStr = normData(sevenDaysAgo.toISOString());
+  const diaSemana = targetDateObj.getDay(); // 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb
+
+  // Dias desde o início da semana (Quinta=0, Sex=1, Sáb=2, Dom=3, Seg=4, Ter=5, Qua=6)
+  // Mapeamento: [Dom(0)=3, Seg(1)=4, Ter(2)=5, Qua(3)=6, Qui(4)=0, Sex(5)=1, Sáb(6)=2]
+  const diasDesdeQuinta = [3, 4, 5, 6, 0, 1, 2][diaSemana];
+
+  const semanaStart = new Date(targetDateObj);
+  semanaStart.setDate(targetDateObj.getDate() - diasDesdeQuinta);
+  const semanaStartStr = normData(semanaStart.toISOString());
+
+  const semanaEnd = new Date(semanaStart);
+  semanaEnd.setDate(semanaStart.getDate() + 4); // Qui + 4 = Seg
+  const semanaEndStr = normData(semanaEnd.toISOString());
+
+  // Dias da semana para o calendário
+  const diasSemana = [];
+  const nomesDias = ['Qui', 'Sex', 'Sáb', 'Dom', 'Seg'];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(semanaStart);
+    d.setDate(semanaStart.getDate() + i);
+    const dStr = normData(d.toISOString());
+    const vendasDia = DB.vendas.filter(v => normData(v.data) === dStr);
+    const totalDia = vendasDia.reduce((s, v) => s + v.total, 0);
+    diasSemana.push({ nome: nomesDias[i], data: dStr, total: totalDia, isActive: dStr === targetDate });
+  }
 
   const vendasSemana = DB.vendas.filter(v => {
     const vDate = normData(v.data);
-    return vDate >= sevenDaysAgoStr && vDate <= targetDate;
+    return vDate >= semanaStartStr && vDate <= semanaEndStr;
   });
 
   const totalSemana = vendasSemana.reduce((s, v) => s + v.total, 0);
   const custoSemana = vendasSemana.reduce((s, v) => s + v.itens.reduce((si, i) => si + (i.custo || 0) * i.qtd, 0), 0);
   
-  // CORREÇÃO: Calcular Consumo da Semana (para debitar no lucro semanal)
+  // Calcular Consumo da Semana (para debitar no lucro semanal)
   const consumosSemana = (DB.consumos || []).filter(c => {
     const cDate = normData(c.data);
-    return cDate >= sevenDaysAgoStr && cDate <= targetDate;
+    return cDate >= semanaStartStr && cDate <= semanaEndStr;
   });
   const custoConsumoSemana = consumosSemana.reduce((s, c) => {
     const p = DB.produtos.find(x => x.id === c.produtoId);
@@ -2315,12 +2397,31 @@ function renderCaixa(){
   const rankSemana = Object.entries(rankSemanaMap).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
   return `
+  ${nightBannerHtml}
   <div class="flex items-center justify-between mb-4">
     <div class="flex items-center gap-2">
       <h2 style="font-family:'Syne',sans-serif;font-size:20px;margin:0">Caixa do Dia</h2>
       <input type="date" id="caixaData" class="form-control" style="width: auto; padding: 4px; font-weight: bold;" value="${currentCaixaDate}" onchange="mudarDataCaixa()">
     </div>
     <button class="btn btn-primary" onclick="imprimirCaixa()">Imprimir</button>
+  </div>
+
+  <!-- Calendário Semanal (Qui-Seg) -->
+  <div class="card mb-4" style="padding: 12px 16px; background: var(--surface2); border: 1px solid var(--border);">
+    <div style="font-size: 11px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">📅 Semana de Trabalho — ${semanaStart.toLocaleDateString('pt-BR', {day:'2-digit',month:'short'})} a ${semanaEnd.toLocaleDateString('pt-BR', {day:'2-digit',month:'short'})}</div>
+    <div style="display: flex; gap: 8px; overflow-x: auto;">
+      ${diasSemana.map(d => `
+        <button onclick="currentCaixaDate='${d.data}';mudarDataCaixa()" style="
+          flex: 1; min-width: 70px; padding: 10px 6px; border-radius: 10px; border: 2px solid ${d.isActive ? 'var(--purple)' : 'var(--border)'};
+          background: ${d.isActive ? 'rgba(168,85,247,0.15)' : 'var(--surface)'};
+          cursor: pointer; transition: all 0.15s; text-align: center;
+        ">
+          <div style="font-size: 10px; font-weight: 700; color: ${d.isActive ? 'var(--purple)' : 'var(--text3)'}; text-transform: uppercase; letter-spacing: 1px;">${d.nome}</div>
+          <div style="font-size: 11px; color: var(--text2); margin: 2px 0;">${d.data.slice(8)}</div>
+          <div style="font-size: 12px; font-weight: 700; color: ${d.total > 0 ? (d.isActive ? 'var(--purple)' : 'var(--green)') : 'var(--text3)'};">R$ ${d.total.toFixed(0)}</div>
+        </button>
+      `).join('')}
+    </div>
   </div>
 
   <div class="grid-2 mb-4">
@@ -2382,11 +2483,11 @@ function renderCaixa(){
         <div>
           Resumo da Semana
           <div style="font-weight:normal; font-size:11px; color:var(--text3); margin-top:2px;">
-            Período: ${fmtDate(sevenDaysAgo.toISOString())} até ${fmtDate(targetDate)}
+            Período: ${fmtDate(semanaStartStr)} até ${fmtDate(semanaEndStr)} (Qui → Seg)
           </div>
         </div>
       </div>
-      <div class="badge purple">Últimos 7 dias</div>
+      <div class="badge purple">Qui → Seg</div>
     </div>
 
     <div class="grid-2">
@@ -2448,6 +2549,22 @@ function calcOpTotal(vendas,op){
 }
 
 function imprimirCaixa(){window.print();}
+
+// Alterna entre modo noturno automático e data real do relógio
+window._toggleNightMode = function() {
+  if (_nightModeOverride === today()) {
+    // Estava forçado para data real → volta ao automático
+    _nightModeOverride = null;
+    showToast('🌙 Modo automático: usando data do turno noturno', 'info');
+  } else {
+    // Estava no automático → força data de hoje real
+    _nightModeOverride = today();
+    showToast('📅 Data real ativada: ' + new Date().toLocaleDateString('pt-BR'), 'info');
+  }
+  // Reset da data do caixa para refletir a mudança
+  currentCaixaDate = getEffectiveDay();
+  document.getElementById('content').innerHTML = renderCaixa();
+};
 
 // ===================== RELATÓRIOS =====================
 function renderRelatorios(){

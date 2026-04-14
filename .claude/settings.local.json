@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(update-config)",
+      "Skill(update-config:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // \"arquivo\"' | { read -r f; cd /c/Users/ferra/.gemini/antigravity/scratch/Conveniencia && git add -A && git diff --cached --quiet || git commit -m \"auto: ${f##*/}\" && git push; } 2>/dev/null || true",
+            "statusMessage": "Salvando no GitHub..."
+          }
+        ]
+      }
+    ]
+  }
+}
