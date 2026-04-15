@@ -665,6 +665,10 @@ async function executarSyncDiario() {
       if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
       if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
     }
+
+    // ✅ Salva backup JSON no Google Drive após o sync
+    await salvarBackupGoogleDrive();
+
   } catch(e) {
     console.error('[Sync Diário] Erro:', e);
     showToast('⚠️ Falha na sincronização das 03:00. Verifique a conexão.', 'error');
@@ -673,6 +677,30 @@ async function executarSyncDiario() {
   // Agenda o próximo sync (daqui 24h)
   window.dailySyncTimeout = null;
   agendarSyncDiario();
+}
+
+async function salvarBackupGoogleDrive() {
+  if (!GOOGLE_SHEETS_URL) return;
+  try {
+    const dataHoje = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+    const nomeArquivo = `backup_conveniencia_${dataHoje}.json`;
+    const payload = JSON.stringify({ action: 'salvar_backup_drive', nomeArquivo, db: DB });
+
+    const res = await fetch(GOOGLE_SHEETS_URL, {
+      method: 'POST',
+      body: payload,
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+    });
+    const data = await res.json();
+    if (data.success) {
+      console.log(`[Backup Drive] ✅ Backup salvo: ${data.nomeArquivo}`);
+      showToast(`☁️ Backup salvo no Drive: ${nomeArquivo}`, 'success');
+    } else {
+      console.warn('[Backup Drive] ⚠️ Erro ao salvar:', data.error);
+    }
+  } catch(e) {
+    console.error('[Backup Drive] Falha:', e);
+  }
 }
 
 function updateDate(){
