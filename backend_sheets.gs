@@ -109,6 +109,11 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (payload.action === 'salvar_backup_drive') {
+      var resultado = salvarBackupDrive(payload.nomeArquivo, payload.db);
+      return ContentService.createTextOutput(JSON.stringify(resultado)).setMimeType(ContentService.MimeType.JSON);
+    }
+
   } catch(err) {
     return ContentService.createTextOutput(JSON.stringify({success: false, error: err.toString()})).setMimeType(ContentService.MimeType.JSON);
   }
@@ -322,5 +327,34 @@ function configurarPlanilhaInicial() {
   var sheetPadrao = ss.getSheetByName('Página1') || ss.getSheetByName('Sheet1');
   if (sheetPadrao && ss.getSheets().length > 1) {
     ss.deleteSheet(sheetPadrao);
+  }
+}
+// ==========================================
+// BACKUP DIÁRIO NO GOOGLE DRIVE
+// ==========================================
+function salvarBackupDrive(nomeArquivo, db) {
+  try {
+    var nomePasta = 'Backups Conveniencia';
+    var pasta;
+    var pastas = DriveApp.getFoldersByName(nomePasta);
+    if (pastas.hasNext()) {
+      pasta = pastas.next();
+    } else {
+      pasta = DriveApp.createFolder(nomePasta);
+    }
+
+    var conteudo = JSON.stringify(db, null, 2);
+
+    // Se já existe arquivo com o mesmo nome (mesmo dia), atualiza o conteúdo
+    var arquivos = pasta.getFilesByName(nomeArquivo);
+    if (arquivos.hasNext()) {
+      arquivos.next().setContent(conteudo);
+    } else {
+      pasta.createFile(nomeArquivo, conteudo, MimeType.PLAIN_TEXT);
+    }
+
+    return { success: true, nomeArquivo: nomeArquivo };
+  } catch(e) {
+    return { success: false, error: e.toString() };
   }
 }

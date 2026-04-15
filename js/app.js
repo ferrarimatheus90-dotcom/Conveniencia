@@ -703,6 +703,41 @@ async function salvarBackupGoogleDrive() {
   }
 }
 
+async function testarBackupDrive() {
+  if (!GOOGLE_SHEETS_URL) {
+    showToast('Configure a URL do Google Sheets primeiro!', 'error');
+    return;
+  }
+  const btn = document.getElementById('btnBackupDrive');
+  const status = document.getElementById('backupDriveStatus');
+  if (btn) { btn.innerHTML = '⏳ Salvando...'; btn.disabled = true; }
+  if (status) status.textContent = 'Aguarde...';
+
+  try {
+    const dataHoje = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+    const nomeArquivo = `backup_conveniencia_${dataHoje}.json`;
+    const payload = JSON.stringify({ action: 'salvar_backup_drive', nomeArquivo, db: DB });
+
+    const res = await fetch(GOOGLE_SHEETS_URL, {
+      method: 'POST',
+      body: payload,
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (btn) { btn.innerHTML = '✅ Backup Salvo!'; btn.disabled = false; }
+      if (status) status.textContent = `✅ Arquivo "${data.nomeArquivo}" salvo na pasta "Backups Conveniencia" do Drive.`;
+      showToast('☁️ Backup salvo no Google Drive!', 'success');
+    } else {
+      throw new Error(data.error);
+    }
+  } catch(e) {
+    if (btn) { btn.innerHTML = '☁️ Salvar Backup Agora no Drive'; btn.disabled = false; }
+    if (status) status.textContent = `❌ Erro: ${e.message}`;
+    showToast('Erro ao salvar backup: ' + e.message, 'error');
+  }
+}
+
 function updateDate(){
   const d=new Date();
   document.getElementById('topbarDate').textContent=
@@ -2975,6 +3010,15 @@ function renderBackup(){
         <p class="text-muted mt-3" style="font-size:11px; margin-top:10px">
           <em>Nota: O botão "Puxar" substitui os dados locais pelos dados que estiverem salvos lá no seu Google planilhas. Use caso altere valores lá e queira trazer pra cá.</em>
         </p>
+      </div>
+
+      <div class="card" style="border-color: #22c55e; background:var(--surface2); grid-column: 1 / -1;">
+        <h3 style="font-family:'Syne',sans-serif;font-size:16px;margin-bottom:6px">☁️ Backup Diário no Google Drive</h3>
+        <p class="text-muted mb-4" style="font-size:13px">Todo dia às <strong>03:00</strong> o sistema salva automaticamente um arquivo <code>backup_conveniencia_DD-MM-AAAA.json</code> na pasta <strong>"Backups Conveniencia"</strong> do seu Google Drive. Você pode também forçar um backup agora para testar.</p>
+        <div class="flex" style="gap:10px; align-items:center; flex-wrap:wrap">
+          <button class="btn btn-primary" style="background:#22c55e; border-color:#22c55e" id="btnBackupDrive" onclick="testarBackupDrive()">☁️ Salvar Backup Agora no Drive</button>
+          <span id="backupDriveStatus" style="font-size:13px; color:var(--text2)"></span>
+        </div>
       </div>
 
       <div class="card" style="border-color:#f59e0b;background:var(--surface2);grid-column: 1 / -1;">
