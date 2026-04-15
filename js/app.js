@@ -582,13 +582,16 @@ function finishLogin(user, rem){
     }, 20000); // Verificar a cada 20 segundos
   }
 
-  // Sincronização Automática para Planilha (a cada 30 minutos)
+  // Sincronização Automática para Planilha (a cada 5 minutos, silenciosa)
   if (!window.autoSyncInterval && GOOGLE_SHEETS_URL) {
     window.autoSyncInterval = setInterval(() => {
-      console.log('Sincronização automática a cada 30 minutos iniciada...');
-      syncToGoogleSheets(); // Envia dados para a nuvem automaticamente
-      showToast('Sincronização automática realizada com a planilha.', 'info');
-    }, 30 * 60 * 1000); // 30 minutos
+      syncToGoogleSheets();
+    }, 5 * 60 * 1000); // 5 minutos
+  }
+
+  // Sincronização Diária às 03:00 (garante que ambos os dispositivos ficam iguais)
+  if (!window.dailySyncTimeout && GOOGLE_SHEETS_URL) {
+    agendarSyncDiario();
   }
 
   navigate('dashboard');
@@ -608,6 +611,8 @@ function doLogout(){
   if(orderCheckInterval) clearInterval(orderCheckInterval);
   if(window.bgSyncInterval) clearInterval(window.bgSyncInterval);
   if(window.autoSyncInterval) clearInterval(window.autoSyncInterval);
+  if(window.dailySyncTimeout) clearTimeout(window.dailySyncTimeout);
+  window.dailySyncTimeout = null;
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('app').style.display='none';
   const savedLogin = localStorage.getItem('convpro_savedLogin');
@@ -615,6 +620,59 @@ function doLogout(){
     document.getElementById('loginUser').value='';
     document.getElementById('loginPass').value='';
   }
+}
+
+// =================== SYNC DIÁRIO ÀS 03:00 ===================
+function agendarSyncDiario() {
+  const agora = new Date();
+  const proximo = new Date();
+  proximo.setHours(3, 0, 0, 0); // 03:00:00 de hoje
+
+  // Se já passou das 03:00 de hoje, agenda para amanhã
+  if (agora >= proximo) {
+    proximo.setDate(proximo.getDate() + 1);
+  }
+
+  const msAte03 = proximo.getTime() - agora.getTime();
+  const horasAte = Math.round(msAte03 / 1000 / 60 / 60 * 10) / 10;
+  console.log(`[Sync Diário] Próxima sincronização em ${horasAte}h (às 03:00 de ${proximo.toLocaleDateString('pt-BR')})`);
+
+  window.dailySyncTimeout = setTimeout(() => {
+    executarSyncDiario();
+  }, msAte03);
+}
+
+async function executarSyncDiario() {
+  console.log('[Sync Diário] Executando sincronização das 03:00...');
+  try {
+    // 1. Envia dados locais para a planilha
+    await fetch(GOOGLE_SHEETS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'sincronizar', db: DB }),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+    });
+
+    // 2. Puxa os dados remotos e faz merge
+    const res = await fetch(GOOGLE_SHEETS_URL + '?action=carregar');
+    const remoteDb = await res.json();
+    const hasUpdates = mergeRemoteDB(remoteDb);
+
+    showToast('✅ Sincronização diária (03:00) concluída!', 'success');
+    console.log('[Sync Diário] Concluída.', hasUpdates ? 'Dados atualizados.' : 'Sem novidades.');
+
+    // Refresca a tela se necessário
+    if (hasUpdates) {
+      if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
+      if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
+    }
+  } catch(e) {
+    console.error('[Sync Diário] Erro:', e);
+    showToast('⚠️ Falha na sincronização das 03:00. Verifique a conexão.', 'error');
+  }
+
+  // Agenda o próximo sync (daqui 24h)
+  window.dailySyncTimeout = null;
+  agendarSyncDiario();
 }
 
 function updateDate(){
