@@ -1,4 +1,4 @@
-// ==========================================
+﻿// ==========================================
 // BACKEND GOOGLE SHEETS - CONVENIÊNCIA OLIVEIRA
 // ==========================================
 
@@ -358,3 +358,4 @@ function salvarBackupDrive(nomeArquivo, db) {
     return { success: false, error: e.toString() };
   }
 }
+
