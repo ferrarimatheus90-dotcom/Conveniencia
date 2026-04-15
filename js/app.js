@@ -2545,7 +2545,10 @@ function renderCaixa(){
           </div>
         </div>
       </div>
-      <div class="badge purple">Qui → Seg</div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="badge purple">Qui → Seg</div>
+        <button class="btn btn-ghost btn-sm" onclick="imprimirResumoSemana()" style="font-size:12px; padding:4px 10px;">🖨️ Imprimir</button>
+      </div>
     </div>
 
     <div class="grid-2">
@@ -2607,6 +2610,158 @@ function calcOpTotal(vendas,op){
 }
 
 function imprimirCaixa(){window.print();}
+
+function imprimirResumoSemana() {
+  // Recalcula os dados da semana atual (mesma lógica do renderCaixa)
+  function normDataLocal(d) {
+    if (!d) return '';
+    d = String(d).split('T')[0];
+    if (d.includes('/')) {
+      const p = d.split('/');
+      if (p.length === 3) return p[2] + '-' + p[1].padStart(2,'0') + '-' + p[0].padStart(2,'0');
+    }
+    return d.slice(0, 10);
+  }
+
+  const targetDate = normDataLocal(currentCaixaDate || getEffectiveDay());
+  const dateParts = targetDate.split('-');
+  const targetDateObj = new Date(dateParts[0], dateParts[1]-1, dateParts[2], 12, 0, 0);
+  const diaSemana = targetDateObj.getDay();
+  const diasDesdeQuinta = [3,4,5,6,0,1,2][diaSemana];
+  const semanaStart = new Date(targetDateObj);
+  semanaStart.setDate(targetDateObj.getDate() - diasDesdeQuinta);
+  const semanaEnd = new Date(semanaStart);
+  semanaEnd.setDate(semanaStart.getDate() + 4);
+  const semanaStartStr = normDataLocal(semanaStart.toISOString());
+  const semanaEndStr = normDataLocal(semanaEnd.toISOString());
+
+  const vendasSemana = DB.vendas.filter(v => {
+    const vDate = normDataLocal(v.data);
+    return vDate >= semanaStartStr && vDate <= semanaEndStr;
+  });
+
+  const totalSemana = vendasSemana.reduce((s,v) => s+v.total, 0);
+  const custoSemana = vendasSemana.reduce((s,v) => s+v.itens.reduce((si,i)=>si+(i.custo||0)*i.qtd,0), 0);
+
+  const consumosSemana = (DB.consumos||[]).filter(c => {
+    const cDate = normDataLocal(c.data);
+    return cDate >= semanaStartStr && cDate <= semanaEndStr;
+  });
+  const custoConsumoSemana = consumosSemana.reduce((s,c) => {
+    const p = DB.produtos.find(x => x.id === c.produtoId);
+    return s + (p && p.custo ? p.custo * c.qtd : 0);
+  }, 0);
+
+  const lucroSemana = totalSemana - custoSemana - custoConsumoSemana;
+  const margemSemana = totalSemana > 0 ? (lucroSemana / totalSemana * 100) : 0;
+
+  // Totais por dia
+  const nomesDias = ['Qui','Sex','Sáb','Dom','Seg'];
+  const diasHtml = nomesDias.map((nome, i) => {
+    const d = new Date(semanaStart);
+    d.setDate(semanaStart.getDate() + i);
+    const dStr = normDataLocal(d.toISOString());
+    const vendasDia = vendasSemana.filter(v => normDataLocal(v.data) === dStr);
+    const totalDia = vendasDia.reduce((s,v)=>s+v.total,0);
+    const custoDia = vendasDia.reduce((s,v)=>s+v.itens.reduce((si,i)=>si+(i.custo||0)*i.qtd,0),0);
+    const lucroDia = totalDia - custoDia;
+    return `<tr>
+      <td><strong>${nome}</strong> ${d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}</td>
+      <td class="num">${vendasDia.length}</td>
+      <td class="num amber">R$ ${totalDia.toFixed(2).replace('.',',')}</td>
+      <td class="num red">R$ ${custoDia.toFixed(2).replace('.',',')}</td>
+      <td class="num green">R$ ${lucroDia.toFixed(2).replace('.',',')}</td>
+    </tr>`;
+  }).join('');
+
+  // Top 10 produtos
+  const rankMap = {};
+  vendasSemana.forEach(v => v.itens.forEach(i => {
+    rankMap[i.nome] = (rankMap[i.nome]||0) + i.qtd;
+  }));
+  const rankSemana = Object.entries(rankMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const rankHtml = rankSemana.map(([n,q],idx) =>
+    `<tr><td>${idx+1}º</td><td>${n}</td><td class="num">${q} un</td></tr>`
+  ).join('');
+
+  const periodoStr = semanaStart.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})
+    + ' a ' + semanaEnd.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Relatório Semanal – Conveniência Oliveira</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; padding: 24px; color: #1a1a1a; font-size: 14px; }
+    h1 { font-size: 20px; border-bottom: 3px solid #8b5cf6; padding-bottom: 8px; margin-bottom: 4px; }
+    .sub { font-size: 12px; color: #666; margin-bottom: 20px; }
+    .grid3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 20px; }
+    .stat { border: 1px solid #ddd; border-radius: 8px; padding: 12px; text-align: center; }
+    .stat .label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat .value { font-size: 22px; font-weight: 800; margin-top: 4px; }
+    .amber { color: #d97706; } .green { color: #16a34a; } .red { color: #dc2626; } .purple { color: #7c3aed; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th { background: #f3f4f6; padding: 8px 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #ddd; }
+    td { padding: 7px 10px; border-bottom: 1px solid #eee; font-size: 13px; }
+    .num { text-align: right; font-family: monospace; }
+    h2 { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: #4c1d95; text-transform: uppercase; letter-spacing: 0.5px; }
+    tfoot td { font-weight: 800; background: #f9f9f9; border-top: 2px solid #ddd; }
+    .footer { text-align: center; font-size: 11px; color: #aaa; margin-top: 30px; border-top: 1px solid #eee; padding-top: 10px; }
+    @media print { body { padding: 10px; } @page { margin: 1cm; } }
+  </style>
+</head>
+<body>
+  <h1>📅 Relatório Semanal – Conveniência Oliveira</h1>
+  <div class="sub">Período: ${periodoStr} (Qui → Seg) &nbsp;|&nbsp; Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+
+  <div class="grid3">
+    <div class="stat">
+      <div class="label">Total Vendido</div>
+      <div class="value amber">R$ ${totalSemana.toFixed(2).replace('.',',')}</div>
+      <div class="label" style="margin-top:4px">${vendasSemana.length} vendas</div>
+    </div>
+    <div class="stat">
+      <div class="label">Custo Total</div>
+      <div class="value red">R$ ${(custoSemana+custoConsumoSemana).toFixed(2).replace('.',',')}</div>
+      <div class="label" style="margin-top:4px">vendas + consumo</div>
+    </div>
+    <div class="stat">
+      <div class="label">Lucro Líquido</div>
+      <div class="value ${lucroSemana>=0?'green':'red'}">R$ ${lucroSemana.toFixed(2).replace('.',',')}</div>
+      <div class="label" style="margin-top:4px">Margem: ${margemSemana.toFixed(1)}%</div>
+    </div>
+  </div>
+
+  <h2>📊 Resultado por Dia</h2>
+  <table>
+    <thead><tr><th>Dia</th><th style="text-align:right">Vendas</th><th style="text-align:right">Faturamento</th><th style="text-align:right">Custo</th><th style="text-align:right">Lucro</th></tr></thead>
+    <tbody>${diasHtml}</tbody>
+    <tfoot><tr>
+      <td><strong>TOTAL</strong></td>
+      <td class="num">${vendasSemana.length}</td>
+      <td class="num amber">R$ ${totalSemana.toFixed(2).replace('.',',')}</td>
+      <td class="num red">R$ ${(custoSemana+custoConsumoSemana).toFixed(2).replace('.',',')}</td>
+      <td class="num green">R$ ${lucroSemana.toFixed(2).replace('.',',')}</td>
+    </tr></tfoot>
+  </table>
+
+  <h2>🏆 Top 10 Produtos Mais Vendidos</h2>
+  <table>
+    <thead><tr><th>#</th><th>Produto</th><th style="text-align:right">Qtd</th></tr></thead>
+    <tbody>${rankHtml || '<tr><td colspan="3" style="text-align:center;color:#aaa">Sem vendas no período</td></tr>'}</tbody>
+  </table>
+
+  <div class="footer">Conveniência Oliveira – Sistema de Gestão</div>
+  <script>window.onload = () => window.print();</script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
 
 // Alterna entre modo noturno automático e data real do relógio
 window._toggleNightMode = function() {
