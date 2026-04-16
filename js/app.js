@@ -1,3 +1,8 @@
+// ===================== CONFIGURAÇÃO SUPABASE =====================
+const SUPABASE_URL = 'https://ryizqbbjxjrxcortkshv.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_rxK53GS5B1ln-py0f1U0TQ_eBX17uM'; 
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 // ===================== THEME =====================
 let currentTheme = localStorage.getItem('convpro_theme') || 'dark';
 if(currentTheme === 'light') document.documentElement.classList.add('light-mode');
@@ -146,10 +151,107 @@ let currentUser = null;
 let currentPage = 'dashboard';
 let GOOGLE_SHEETS_URL = localStorage.getItem('convpro_gs_url') || 'https://script.google.com/macros/s/AKfycbw2-zau41VnCdOV0-HxcmDOeQSaSlciv4Cs8dOnxCkrP2MWTJYNXoHVtDVL9vEgo_wkGw/exec';
 
-function saveDB(){
-  localStorage.setItem('convpro_db',JSON.stringify(DB));
-  syncToGoogleSheets(); // Envia para a nuvem de forma invisível
+async function saveDB(){
+  repairDB(); // Garante integridade antes de salvar
+  localStorage.setItem('convpro_db',JSON.stringify(DB)); // Backup local rápido
+  
+  updateCloudIcon('loading');
+
+  // Sincronização com Supabase (Nuvem)
+  try {
+    const { error } = await sb
+      .from('config_app') 
+      .upsert({ id: 1, json_db: DB, updated_at: new Date() });
+    
+    if (error) throw error;
+    console.log("✅ Sincronizado com Supabase!");
+    updateCloudIcon('success');
+  } catch(e) {
+    console.warn("⚠️ Falha ao salvar no Supabase:", e);
+    updateCloudIcon('error');
+  }
+
+  syncToGoogleSheets();
 }
+
+function updateCloudIcon(status) {
+  let iconEl = document.getElementById('cloudStatusIcon');
+  if (!iconEl) {
+    // Cria o ícone se não existir na topbar
+    const topBar = document.getElementById('topbar');
+    if (!topBar) return;
+    iconEl = document.createElement('div');
+    iconEl.id = 'cloudStatusIcon';
+    iconEl.style.cssText = 'margin-right:15px; font-size:18px; cursor:help; transition: all 0.3s;';
+    // Insere antes da data
+    const dateEl = document.getElementById('topbarDate');
+    topBar.insertBefore(iconEl, dateEl);
+  }
+
+  if (status === 'loading') {
+    iconEl.innerHTML = '⏳';
+    iconEl.title = 'Sincronizando com Supabase...';
+    iconEl.style.opacity = '0.5';
+  } else if (status === 'success') {
+    iconEl.innerHTML = '☁️';
+    iconEl.title = 'Tudo sincronizado na Nuvem';
+    iconEl.style.opacity = '1';
+    iconEl.style.color = '#4CAF50';
+    iconEl.style.filter = 'drop-shadow(0 0 2px #4CAF50)';
+    setTimeout(() => { iconEl.style.color = ''; iconEl.style.filter = ''; }, 2000);
+  } else {
+    iconEl.innerHTML = '❌';
+    iconEl.title = 'Erro ao sincronizar com a Nuvem. Verifique a internet.';
+    iconEl.style.opacity = '1';
+    iconEl.style.color = '#ff5252';
+  }
+}
+
+async function loadDBFromCloud() {
+  try {
+    const { data, error } = await sb
+      .from('config_app')
+      .select('json_db')
+      .eq('id', 1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = não encontrado (tabela vazia)
+
+    if (data && data.json_db) {
+      console.log("📥 Dados carregados do Supabase!");
+      DB = data.json_db;
+      return true;
+    }
+  } catch(e) {
+    console.error("❌ Falha ao carregar do Supabase:", e);
+  }
+  return false;
+}
+
+function repairDB() {
+  if (!DB) return;
+  
+  const fix = (list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach(item => {
+      if (item.data) item.data = normData(item.data);
+    });
+  };
+
+  fix(DB.vendas);
+  fix(DB.consumos);
+  fix(DB.compras);
+  fix(DB.producoes);
+  
+  // Reparo de custo/total em vendas se estiverem corrompidos
+  DB.vendas.forEach(v => {
+    if (v.itens && Array.isArray(v.itens)) {
+      if (!v.total || v.total <= 0) v.total = v.itens.reduce((s,i) => s + (i.subtotal || 0), 0);
+      if (!v.custo || v.custo <= 0) v.custo = v.itens.reduce((s,i) => s + (i.custo || 0) * (i.qtd || 1), 0);
+    }
+  });
+}
+
 
 async function syncToGoogleSheets() {
   if (!GOOGLE_SHEETS_URL) return;
@@ -527,24 +629,28 @@ function doLogin(){
   
   document.getElementById('loginError').style.display='none';
   
-  // Entra imediatamente com os dados locais para garantir acesso rápido e sem erros
+  // Entra imediatamente com os dados locais para garantir acesso rápido
   finishLogin(user, rem);
 
-  // Faz a sincronização inicial em background logo após entrar
-  // Faz a sincronização inicial em background logo após entrar (MESCLANDO, NÃO SOBRESCREVENDO)
-  if (GOOGLE_SHEETS_URL) {
+  // Sincronização em background: Tenta carregar do Supabase primeiro (MAIS RÁPIDO E MODERNO)
+  loadDBFromCloud().then(success => {
+    if (success) {
+      console.log("Banco de dados sincronizado via Supabase.");
+      if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
+      if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
+    } else if (GOOGLE_SHEETS_URL) {
+      // Se falhar no Supabase, tenta o Sheets como fallback
       fetch(GOOGLE_SHEETS_URL + '?action=carregar')
         .then(r => r.json())
         .then(remoteDb => {
             const hasUpdates = mergeRemoteDB(remoteDb);
             if (hasUpdates) {
-                console.log("Banco de dados mesclado com a nuvem após login.");
-                // Se estiver em uma tela que depende desses dados, atualiza
                 if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
                 if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
             }
-        }).catch(e => console.error("Erro na sincronização pós-login:", e));
-  }
+        });
+    }
+  });
 }
 
 function finishLogin(user, rem){
@@ -565,20 +671,15 @@ function finishLogin(user, rem){
   setInterval(updateDate,60000);
   startPollingOrders();
 
-  // Sincronização Automática Background (para manter 3 PCs com os mesmos dados)
-  if (!window.bgSyncInterval && GOOGLE_SHEETS_URL) {
+  // Sincronização Automática Background via Supabase (Rápido e leve)
+  if (!window.bgSyncInterval) {
     window.bgSyncInterval = setInterval(async () => {
-      try {
-        const res = await fetch(GOOGLE_SHEETS_URL + '?action=carregar');
-        const remoteDb = await res.json();
-        
-        const hasUpdates = mergeRemoteDB(remoteDb);
-        if (hasUpdates) {
-          if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
-          if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
-          if (currentPage === 'vendas') renderProdutos_venda();
-        }
-      } catch(e){}
+      const hasUpdates = await loadDBFromCloud();
+      if (hasUpdates) {
+        if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
+        if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
+        if (currentPage === 'vendas') renderProdutos_venda();
+      }
     }, 20000); // Verificar a cada 20 segundos
   }
 
@@ -930,12 +1031,12 @@ function opTag(op){
 
 // ===================== DASHBOARD =====================
 function renderDashboard(){
-  const vendasHoje = DB.vendas.filter(v => (v.data || '').slice(0, 10) === today());
+  const hoje = today();
+  const vendasHoje = DB.vendas.filter(v => normData(v.data) === hoje);
   const totalHoje = vendasHoje.reduce((s, v) => s + v.total, 0);
   const custoHoje = vendasHoje.reduce((s, v) => s + v.custo, 0);
   
-  // === Novas Métricas: Consumo/Quebra do Dia ===
-  const consumoHoje = (DB.consumos || []).filter(c => c.data === today());
+  const consumoHoje = (DB.consumos || []).filter(c => normData(c.data) === hoje);
   const custoConsumoHoje = consumoHoje.reduce((s, c) => {
     const p = DB.produtos.find(x => x.id === c.produtoId);
     return s + (p && p.custo ? p.custo * c.qtd : 0);
@@ -943,7 +1044,9 @@ function renderDashboard(){
   const qtdConsumo = consumoHoje.reduce((s, c) => s + c.qtd, 0);
 
   const lucroHoje = totalHoje - custoHoje - custoConsumoHoje;
-  const totalVendasMes = DB.vendas.filter(v=>(v.data||'').slice(0,7)===today().slice(0,7)).reduce((s,v)=>s+v.total,0);
+  const mesAtual = hoje.slice(0, 7);
+  const totalVendasMes = DB.vendas.filter(v => normData(v.data).slice(0, 7) === mesAtual).reduce((s, v) => s + v.total, 0);
+
 
   const produtosAlerta=DB.produtos.filter(p=>p.status==='ativo'&&p.estoque<=p.estoqueMin);
 
@@ -1650,7 +1753,8 @@ function salvarProducao(producaoId = '', qtdAntiga = 0, produtoId = null){
 
   // Se for edição, primeiro removemos a quantidade antiga do estoque
   if (producaoId) {
-    const idx = DB.producoes.findIndex(x => x.id == producaoId || (x.produtoId === pid && x.data === today()));
+    const idx = DB.producoes.findIndex(x => x.id == producaoId || (x.produtoId === pid && normData(x.data) === today()));
+
     if (idx !== -1) {
       p.estoque -= DB.producoes[idx].qtd;
       DB.producoes.splice(idx, 1);
@@ -2425,17 +2529,8 @@ function renderCaixa(){
     </button>
   </div>` : '';
 
-  function normData(d) {
-    if (!d) return '';
-    d = String(d).split('T')[0];
-    if (d.includes('/')) {
-      const p = d.split('/');
-      if (p.length === 3) return p[2] + '-' + p[1].padStart(2, '0') + '-' + p[0].padStart(2, '0');
-    }
-    return d.slice(0, 10);
-  }
-
   const targetDate = normData(currentCaixaDate);
+
   const vendasHoje = DB.vendas.filter(v => normData(v.data) === targetDate);
 
   const totEsp=calcOpTotal(vendasHoje,'Espetinho');
@@ -2676,17 +2771,8 @@ function imprimirCaixa(){window.print();}
 
 function imprimirResumoSemana() {
   // Recalcula os dados da semana atual (mesma lógica do renderCaixa)
-  function normDataLocal(d) {
-    if (!d) return '';
-    d = String(d).split('T')[0];
-    if (d.includes('/')) {
-      const p = d.split('/');
-      if (p.length === 3) return p[2] + '-' + p[1].padStart(2,'0') + '-' + p[0].padStart(2,'0');
-    }
-    return d.slice(0, 10);
-  }
+  const targetDate = normData(currentCaixaDate || getEffectiveDay());
 
-  const targetDate = normDataLocal(currentCaixaDate || getEffectiveDay());
   const dateParts = targetDate.split('-');
   const targetDateObj = new Date(dateParts[0], dateParts[1]-1, dateParts[2], 12, 0, 0);
   const diaSemana = targetDateObj.getDay();
