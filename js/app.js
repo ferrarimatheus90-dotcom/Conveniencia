@@ -207,6 +207,75 @@ function updateCloudIcon(status) {
   }
 }
 
+function mergeRemoteDB(remote) {
+  if (!remote) return false;
+  let hasUpdates = false;
+  console.log("🛠️ Iniciando Smart Merge de dados remotos...");
+
+  // 1. Produtos: Adiciona novos, mas mantém estoque local de existentes (local wins for stock)
+  if (remote.produtos && Array.isArray(remote.produtos)) {
+    remote.produtos.forEach(rp => {
+      const localP = DB.produtos.find(p => p.id === rp.id);
+      if (!localP) {
+        DB.produtos.push(rp);
+        hasUpdates = true;
+        console.log(`[Smart Merge] Novo produto remoto adicionado: ${rp.nome}`);
+      }
+    });
+  }
+
+  // 2. Mesas Abertas: União baseada em ID ou Nome
+  if (remote.mesas_abertas && Array.isArray(remote.mesas_abertas)) {
+    remote.mesas_abertas.forEach(rm => {
+      // Busca mesa local por ID ou por Nome (se ID não existir ainda)
+      const localM = DB.mesas_abertas.find(lm => 
+        (rm.id && lm.id === rm.id) || 
+        (lm.cliente.toLowerCase() === rm.cliente.toLowerCase())
+      );
+      
+      if (!localM) {
+        // Se a mesa remota não existe aqui, adiciona para garantir que nada se perca
+        DB.mesas_abertas.push(rm);
+        hasUpdates = true;
+        console.log(`[Smart Merge] Mesa aberta recuperada da nuvem: ${rm.cliente}`);
+      } else {
+        // Se já existe local, preservamos a LOCAL (que é a que o usuário está mexendo agora)
+        // O próximo saveDB() vai mandar a versão local atualizada para a nuvem.
+      }
+    });
+  }
+
+  // 3. Vendas e Histórico: Adiciona o que não existe localmente (baseado em data/hora ou ID)
+  ['vendas', 'compras', 'producoes', 'consumos', 'auditoria'].forEach(key => {
+    if (remote[key] && Array.isArray(remote[key])) {
+      remote[key].forEach(ri => {
+        const uniqueKey = ri.id || ri.dt || ri.data + ri.hora;
+        const localItems = DB[key];
+        const exists = localItems.some(li => (li.id && ri.id && li.id === ri.id) || (li.dt === ri.dt));
+        if (!exists) {
+          localItems.push(ri);
+          hasUpdates = true;
+        }
+      });
+      // Ordena por data (opcional, mas bom para UI)
+      DB[key].sort((a,b) => new Date(b.dt || b.data) - new Date(a.dt || a.data));
+    }
+  });
+
+  // 4. Integridade de IDs: Sincroniza os contadores para o maior valor
+  if (remote.nextId) {
+    Object.keys(remote.nextId).forEach(k => {
+      DB.nextId[k] = Math.max(DB.nextId[k] || 0, remote.nextId[k] || 0);
+    });
+  }
+
+  if (hasUpdates) {
+    saveDB(); // Salva localmente as mudanças do merge
+    return true;
+  }
+  return false;
+}
+
 async function loadDBFromCloud() {
   try {
     const { data, error } = await sb
@@ -215,11 +284,14 @@ async function loadDBFromCloud() {
       .eq('id', 1)
       .single();
 
-    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = não encontrado (tabela vazia)
+    if (error && error.code !== 'PGRST116') throw error;
 
     if (data && data.json_db) {
-      console.log("📥 Dados carregados do Supabase!");
-      DB = data.json_db;
+      console.log("📥 Dados recebidos do Supabase. Iniciando merge...");
+      const updated = mergeRemoteDB(data.json_db);
+      if (updated) {
+        console.log("✨ Banco de dados atualizado com informações da nuvem.");
+      }
       return true;
     }
   } catch(e) {
@@ -227,6 +299,7 @@ async function loadDBFromCloud() {
   }
   return false;
 }
+
 
 function repairDB() {
   if (!DB) return;
@@ -1237,7 +1310,10 @@ function renderVendas(){
       <div class="card mb-3">
         <div class="flex items-center justify-between mb-3">
           <div class="card-title" style="margin:0">🛒 Carrinho</div>
-          <button class="btn btn-ghost btn-sm" style="font-size:12px; border:1px solid var(--border)" onclick="abrirModalMesas()"><span class="icon">📝</span> Mesas Abertas</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:12px; border:1px solid var(--border); position:relative" onclick="abrirModalMesas()">
+            <span class="icon">📝</span> Mesas Abertas
+            ${DB.mesas_abertas?.length ? `<span style="position:absolute; top:-8px; right:-8px; background:var(--red); color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:bold; border:2px solid var(--surface1)">${DB.mesas_abertas.length}</span>` : ''}
+          </button>
         </div>
         <div id="cartItems"><div class="empty-state" style="padding:16px"><div class="icon">🛒</div>Adicione produtos</div></div>
         <div class="divider"></div>
@@ -1555,65 +1631,248 @@ function salvarMesaAberta(){
   }
 
   DB.mesas_abertas = DB.mesas_abertas || [];
+  
+  // Busca por nome (case insensitive)
   const idx = DB.mesas_abertas.findIndex(x => x.cliente.toLowerCase() === cliente.toLowerCase());
   
   const obs = document.getElementById('vendaObs')?.value || '';
+  const cartClone = JSON.parse(JSON.stringify(cart));
   
-  const novaMesa = {
-    cliente: cliente,
-    obs: obs,
-    itens: JSON.parse(JSON.stringify(cart)), // clona os itens
-    dtAtualizacao: getLocalISODate()
-  };
-  
+  let mesaFinal = null;
+
   if(idx >= 0){
-    DB.mesas_abertas[idx] = novaMesa;
+    // Se a mesa já existe, perguntar se quer mesclar ou substituir
+    const mesaExistente = DB.mesas_abertas[idx];
+    if (confirm(`Já existe uma conta aberta para "${mesaExistente.cliente}".\nDeseja ADICIONAR estes novos itens aos itens já existentes nela?`)) {
+       // Mescla itens
+       mesaExistente.itens = [...mesaExistente.itens, ...cartClone];
+       mesaExistente.dtAtualizacao = getLocalISODate();
+       mesaExistente.obs = (mesaExistente.obs ? mesaExistente.obs + ' | ' : '') + obs;
+       mesaFinal = mesaExistente;
+       auditLog('MESA_UPDATE', `Adicionados itens à mesa: ${cliente}`);
+    } else {
+       if (!confirm("Deseja SUBSTITUIR os itens atuais da mesa por este novo carrinho? (Ação irreversível)")) {
+          return;
+       }
+       mesaExistente.itens = cartClone;
+       mesaExistente.dtAtualizacao = getLocalISODate();
+       mesaExistente.obs = obs;
+       mesaFinal = mesaExistente;
+       auditLog('MESA_OVERWRITE', `Itens da mesa ${cliente} foram substituídos`);
+    }
   } else {
-    DB.mesas_abertas.push(novaMesa);
+    // Nova mesa
+    mesaFinal = {
+      id: Date.now(), // ID único
+      cliente: cliente,
+      obs: obs,
+      itens: cartClone,
+      dtCriacao: getLocalISODate(),
+      dtAtualizacao: getLocalISODate()
+    };
+    DB.mesas_abertas.push(mesaFinal);
+    auditLog('MESA_OPEN', `Aberta nova mesa: ${cliente}`);
   }
   
   saveDB();
   
   // Imprimir comanda de cozinha (parcial)
   if (document.getElementById('vendaImprimir')?.checked) {
-    imprimirComandaParcial(novaMesa);
+    imprimirComandaParcial(mesaFinal);
   } else {
     showToast(`Pedido salvo na comanda: ${cliente}`, 'success');
   }
   
   cart = [];
-  updateCart();
-  document.getElementById('vendaObs').value='';
-  document.getElementById('vendaCliente').value='';
+  // Atualiza a UI principal para mostrar o badge atualizado
+  if(currentPage === 'vendas') {
+    document.getElementById('content').innerHTML = renderVendas();
+    initVendas();
+  } else {
+    updateCart();
+    document.getElementById('vendaObs').value='';
+    document.getElementById('vendaCliente').value='';
+  }
 }
 
-function abrirModalMesas(){
+function abrirModalMesas(filtro = ''){
   DB.mesas_abertas = DB.mesas_abertas || [];
-  openModal(`
-    <div class="modal-title">📝 Mesas / Contas em Aberto</div>
-    <div class="text-muted" style="margin-bottom:15px; font-size:13px;">Selecione uma mesa para adicionar mais itens ou para realizar a cobrança final.</div>
-    ${DB.mesas_abertas.length === 0 ? '<div class="empty-state"><div class="icon">📝</div>Nenhuma mesa em aberto no momento</div>' : ''}
-    ${DB.mesas_abertas.length ? `<div class="table-wrap"><table>
-      <thead><tr><th>Mesa/Cliente</th><th>Qtd Itens</th><th>Total Atual</th><th>Ações</th></tr></thead>
-      <tbody>${DB.mesas_abertas.map((m, idx) => `
-        <tr>
-          <td><strong>${m.cliente}</strong><br><small class="text-muted">${new Date(m.dtAtualizacao).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</small></td>
-          <td class="mono">${m.itens.reduce((s,i) => s + i.qtd, 0)} un</td>
-          <td class="text-amber mono">${fmt(m.itens.reduce((s,i) => s + (i.preco * i.qtd), 0))}</td>
-          <td>
-             <button class="btn btn-primary btn-sm" onclick="carregarMesaAberta(${idx})">Abrir</button>
-             <button class="btn btn-danger btn-sm" onclick="excluirMesaAberta(${idx})">×</button>
-          </td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>` : ''}
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Fechar</button></div>
-  `);
+  
+  let mesas = [...DB.mesas_abertas];
+  if(filtro) {
+    const f = filtro.toLowerCase().trim();
+    mesas = mesas.filter(m => m.cliente.toLowerCase().includes(f));
+  }
+
+  // Ordenar: as atualizadas recentemente primeiro
+  mesas.sort((a,b) => new Date(b.dtAtualizacao) - new Date(a.dtAtualizacao));
+
+  const totalAbertas = DB.mesas_abertas.length;
+
+  const html = `
+    <style>
+      .mesa-card {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        position: relative;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-height: 120px;
+      }
+      .mesa-card:hover {
+        border-color: var(--accent);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        background: var(--surface3);
+      }
+      .mesa-card.warning { border-color: var(--amber); box-shadow: 0 0 10px rgba(245, 158, 11, 0.1); }
+      .mesa-card.danger { border-color: var(--red); box-shadow: 0 0 10px rgba(239, 68, 68, 0.1); }
+      
+      .mesa-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px;
+        max-height: 60vh;
+        overflow-y: auto;
+        padding: 4px;
+        margin-top: 10px;
+      }
+      /* Custom scrollbar para o grid */
+      .mesa-grid::-webkit-scrollbar { width: 6px; }
+      .mesa-grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+      
+      .btn-delete-mesa {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: rgba(239, 68, 68, 0.1);
+        border: none;
+        color: var(--red);
+        cursor: pointer;
+        font-size: 16px;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+      .mesa-card:hover .btn-delete-mesa { opacity: 1; }
+      .btn-delete-mesa:hover { background: var(--red); color: white; }
+
+      .mesa-badge {
+        font-size: 10px;
+        font-weight: bold;
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+      }
+    </style>
+
+    <div class="modal-header-custom" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+       <div>
+         <div class="modal-title" style="margin:0">📝 Comandas em Aberto</div>
+         <div class="text-muted" style="font-size:12px;">Gerencie as contas ativas do estabelecimento</div>
+       </div>
+       <div style="text-align:right">
+         <div style="background:var(--accent); color:#000; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:13px; display:inline-block">
+           ${totalAbertas} Mesas
+         </div>
+       </div>
+    </div>
+
+    <div class="search-wrap" style="position:relative; margin-bottom:15px;">
+      <input type="text" id="inputBuscaMesa" class="form-control" placeholder="🔍 Buscar por mesa ou nome..." value="${filtro}" 
+             oninput="window._timerBuscaMesa && clearTimeout(window._timerBuscaMesa); window._timerBuscaMesa = setTimeout(() => abrirModalMesas(this.value), 300)"
+             style="background:var(--surface2); border-color:var(--border); padding-left:35px">
+      <script>setTimeout(()=> { 
+        const inp = document.getElementById('inputBuscaMesa'); 
+        if(inp) { 
+          inp.focus(); 
+          inp.setSelectionRange(inp.value.length, inp.value.length); 
+        } 
+      }, 50);</script>
+    </div>
+
+    ${mesas.length === 0 ? `
+      <div class="empty-state" style="padding:60px 0; border: 2px dashed var(--border); border-radius:12px; margin-top:10px">
+        <div class="icon" style="font-size:48px; margin-bottom:15px; opacity:0.5">📝</div>
+        <div style="font-weight:600; font-size:16px; color:var(--text1)">
+          ${filtro ? 'Nenhuma mesa encontrada para esta busca' : 'Nenhuma mesa aberta no momento'}
+        </div>
+        <p class="text-muted" style="font-size:13px; margin-top:5px">
+          ${filtro ? 'Tente outro nome ou limpe a busca.' : 'Use o botão "Deixar em Aberto" no carrinho para salvar uma comanda.'}
+        </p>
+        ${filtro ? `<button class="btn btn-ghost btn-sm mt-3" onclick="abrirModalMesas('')">Limpar Busca</button>` : ''}
+      </div>
+    ` : `
+      <div class="mesa-grid">
+        ${mesas.map(m => {
+          const totalValue = m.itens.reduce((s,i) => s + (i.preco * i.qtd), 0);
+          const totalQtd = m.itens.reduce((s,i) => s + i.qtd, 0);
+          const diffMs = (new Date() - new Date(m.dtAtualizacao));
+          const diffMin = Math.floor(diffMs / 60000);
+          
+          let timeMsg = diffMin < 1 ? 'Agora' : `Há ${diffMin} min`;
+          if(diffMin >= 60) timeMsg = `Há ${Math.floor(diffMin/60)}h ${diffMin%60}m`;
+          
+          let alertClass = '';
+          if(diffMin > 60) alertClass = 'danger';
+          else if(diffMin > 30) alertClass = 'warning';
+
+          return `
+            <div class="mesa-card ${alertClass}" onclick="carregarMesaAbertaById(${m.id})">
+              
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px">
+                <span class="mesa-badge" style="background:${alertClass==='danger'?'rgba(239,68,68,0.2)':(alertClass==='warning'?'rgba(245,158,11,0.2)':'rgba(76,175,80,0.2)')}; color:${alertClass==='danger'?'var(--red)':(alertClass==='warning'?'var(--amber)':'#81c784')}">
+                  ${timeMsg}
+                </span>
+                <button class="btn-delete-mesa" onclick="event.stopPropagation(); excluirMesaAbertaById(${m.id})">×</button>
+              </div>
+
+              <div class="mesa-name" style="font-weight:bold; font-size:17px; line-height:1.2; color:var(--text1); margin-bottom:12px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
+                ${m.cliente}
+              </div>
+              
+              <div style="display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid rgba(255,255,255,0.05); padding-top:10px">
+                <div style="font-size:11px; color:var(--text2)">
+                  <span style="display:block">📦 ${totalQtd} itens</span>
+                </div>
+                <div class="mono" style="font-weight:bold; font-size:15px; color:${totalValue > 100 ? 'var(--amber)' : 'var(--text1)'}">
+                  ${fmt(totalValue)}
+                </div>
+              </div>
+
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `}
+
+    <div class="modal-footer" style="margin-top:20px; border-top:1px solid var(--border); padding-top:15px; display:flex; justify-content:space-between; align-items:center">
+      <div class="text-muted" style="font-size:11px">
+        Dica: Clique em uma mesa para carregá-la no carrinho.
+      </div>
+      <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+    </div>
+  `;
+  
+  openModal(html);
 }
 
-function carregarMesaAberta(idx){
-  const m = DB.mesas_abertas[idx];
-  if(!m) return;
+function carregarMesaAbertaById(id){
+  const m = DB.mesas_abertas.find(x => x.id == id);
+  if(!m) { 
+    showToast('Mesa não encontrada. Pode ter sido fechada em outro terminal.', 'error');
+    return; 
+  }
   cart = JSON.parse(JSON.stringify(m.itens));
   document.getElementById('vendaCliente').value = m.cliente;
   document.getElementById('vendaObs').value = m.obs || '';
@@ -1622,12 +1881,21 @@ function carregarMesaAberta(idx){
   showToast(`Mesa ${m.cliente} carregada para o caixa!`, 'info');
 }
 
-function excluirMesaAberta(idx){
-  if(confirm('Tem certeza que deseja apagar essa comanda? Os itens não foram cobrados do cliente.')){
-    DB.mesas_abertas.splice(idx, 1);
-    saveDB();
-    abrirModalMesas();
+function excluirMesaAbertaById(id){
+  const m = DB.mesas_abertas.find(x => x.id == id);
+  if(!m) return;
+  if(!confirm(`Deseja excluir permanentemente a conta de "${m.cliente}"?`)) return;
+  
+  DB.mesas_abertas = DB.mesas_abertas.filter(x => x.id != id);
+  auditLog('MESA_DELETE', `Mesa excluída: ${m.cliente}`);
+  saveDB();
+  
+  if(currentPage === 'vendas') {
+    document.getElementById('content').innerHTML = renderVendas();
+    initVendas();
   }
+  
+  abrirModalMesas();
 }
 
 function imprimirComandaParcial(mesa){
