@@ -149,6 +149,8 @@ let DB = JSON.parse(localStorage.getItem('convpro_db') || 'null') || {
 };
 
 let currentUser = null;
+let syncPending = false;
+let retrySyncTimeout = null;
 let currentPage = 'dashboard';
 let GOOGLE_SHEETS_URL = localStorage.getItem('convpro_gs_url') || 'https://script.google.com/macros/s/AKfycbw2-zau41VnCdOV0-HxcmDOeQSaSlciv4Cs8dOnxCkrP2MWTJYNXoHVtDVL9vEgo_wkGw/exec';
 
@@ -158,19 +160,32 @@ async function saveDB(){
   
   updateCloudIcon('loading');
 
-  // Sincronização com Supabase (Nuvem)
+  // Sincronização com Supabase (Nuvem) com Retentativa Automática
   try {
     const { error } = await sb
       .from('config_app') 
       .upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
     
     if (error) throw error;
+    
     console.log("✅ Sincronizado com Supabase!");
+    syncPending = false;
     updateCloudIcon('success');
   } catch(e) {
-    console.warn("⚠️ Falha ao salvar no Supabase:", e);
-    let msg = e.message || "Erro de conexão";
-    updateCloudIcon('error', msg);
+    console.warn("⚠️ Falha ao salvar no Supabase. Tentará novamente em 30s.", e);
+    syncPending = true;
+    updateCloudIcon('error', e.message || "Erro de conexão (Offline?)");
+
+    // Agenda retentativa automática se já não houver uma agendada
+    if (!retrySyncTimeout) {
+      retrySyncTimeout = setTimeout(() => {
+        retrySyncTimeout = null;
+        if (syncPending) {
+          console.log("🔄 Tentando re-sincronizar dados pendentes...");
+          saveDB();
+        }
+      }, 30000);
+    }
   }
 
   syncToGoogleSheets();
