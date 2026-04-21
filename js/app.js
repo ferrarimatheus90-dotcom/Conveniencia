@@ -144,6 +144,7 @@ let DB = JSON.parse(localStorage.getItem('convpro_db') || 'null') || {
   consumos: [],
   caixas: [],
   auditoria: [],
+  config: { lastSyncDiario: null, lastBackupSync: null },
   nextId: {produto:100,venda:1,compra:1,producao:1,consumo:1,caixa:1}
 };
 
@@ -161,20 +162,21 @@ async function saveDB(){
   try {
     const { error } = await sb
       .from('config_app') 
-      .upsert({ id: 1, json_db: DB, updated_at: new Date() });
+      .upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
     
     if (error) throw error;
     console.log("✅ Sincronizado com Supabase!");
     updateCloudIcon('success');
   } catch(e) {
     console.warn("⚠️ Falha ao salvar no Supabase:", e);
-    updateCloudIcon('error');
+    let msg = e.message || "Erro de conexão";
+    updateCloudIcon('error', msg);
   }
 
   syncToGoogleSheets();
 }
 
-function updateCloudIcon(status) {
+function updateCloudIcon(status, errorMsg = '') {
   let iconEl = document.getElementById('cloudStatusIcon');
   if (!iconEl) {
     // Cria o ícone se não existir na topbar
@@ -201,9 +203,13 @@ function updateCloudIcon(status) {
     setTimeout(() => { iconEl.style.color = ''; iconEl.style.filter = ''; }, 2000);
   } else {
     iconEl.innerHTML = '❌';
-    iconEl.title = 'Erro ao sincronizar com a Nuvem. Verifique a internet.';
+    iconEl.title = 'Erro ao sincronizar com a Nuvem: ' + (errorMsg || 'Verifique a conexão');
     iconEl.style.opacity = '1';
     iconEl.style.color = '#ff5252';
+    // Se for erro, mostra um toast com o erro técnico se não for apenas falha de rede comum
+    if(errorMsg && errorMsg !== 'Failed to fetch') {
+       console.error("ERRO_NUVEM:", errorMsg);
+    }
   }
 }
 
@@ -269,11 +275,29 @@ function mergeRemoteDB(remote) {
     });
   }
 
-  if (hasUpdates) {
-    saveDB(); // Salva localmente as mudanças do merge
-    return true;
+  // 4. Configurações (A configuração mais recente ou existente vence)
+  if (remote.config) {
+    if (!DB.config) {
+      DB.config = remote.config;
+      hasUpdates = true;
+    } else {
+      // Se o remoto tem um sync mais recente, atualiza o local
+      if (remote.config.lastSyncDiario > (DB.config.lastSyncDiario || '')) {
+        DB.config.lastSyncDiario = remote.config.lastSyncDiario;
+        hasUpdates = true;
+      }
+      if (remote.config.lastBackupSync > (DB.config.lastBackupSync || '')) {
+        DB.config.lastBackupSync = remote.config.lastBackupSync;
+        hasUpdates = true;
+      }
+    }
   }
-  return false;
+
+  if (hasUpdates) {
+    saveDB();
+    repairDB();
+  }
+  return hasUpdates;
 }
 
 async function loadDBFromCloud() {
@@ -316,6 +340,22 @@ function repairDB() {
   fix(DB.compras);
   fix(DB.producoes);
   
+  // Garantir ordenação decrescente (mais recentes primeiro) em todas as listas cronológicas
+  const sortDesc = (list) => {
+    if (!Array.isArray(list)) return;
+    list.sort((a, b) => {
+      const dateA = new Date(a.dt || a.data + 'T' + (a.hora || '00:00:00'));
+      const dateB = new Date(b.dt || b.data + 'T' + (b.hora || '00:00:00'));
+      return dateB - dateA;
+    });
+  };
+
+  sortDesc(DB.vendas);
+  sortDesc(DB.consumos);
+  sortDesc(DB.compras);
+  sortDesc(DB.producoes);
+  sortDesc(DB.auditoria);
+
   // Reparo de custo/total em vendas se estiverem corrompidos
   DB.vendas.forEach(v => {
     if (v.itens && Array.isArray(v.itens)) {
@@ -323,17 +363,22 @@ function repairDB() {
       if (!v.custo || v.custo <= 0) v.custo = v.itens.reduce((s,i) => s + (i.custo || 0) * (i.qtd || 1), 0);
     }
   });
+
+  // Garantir objeto de config
+  if (!DB.config) DB.config = { lastSyncDiario: null, lastBackupSync: null };
 }
 
 
 async function syncToGoogleSheets() {
   if (!GOOGLE_SHEETS_URL) return;
   try {
-    fetch(GOOGLE_SHEETS_URL, {
+    await fetch(GOOGLE_SHEETS_URL, {
       method: 'POST',
       body: JSON.stringify({ action: 'sincronizar', db: DB }),
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' } // 'text/plain' evita erro de CORS no Apps Script
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' } 
     });
+    DB.config.lastSyncDiario = new Date().toISOString();
+    saveDB();
   } catch(e) {
     console.error("Erro no background ao sincronizar com Google Sheets", e);
   }
@@ -764,8 +809,18 @@ function finishLogin(user, rem){
   }
 
   // Sincronização Diária às 03:00 (garante que ambos os dispositivos ficam iguais)
-  if (!window.dailySyncTimeout && GOOGLE_SHEETS_URL) {
+  if (GOOGLE_SHEETS_URL) {
     agendarSyncDiario();
+    
+    // Verifica se perdeu o sync de hoje (ex: computador estava desligado às 03:00)
+    const hojeStr = getBusinessDay();
+    const ultimoSyncStr = DB.config?.lastSyncDiario ? normData(DB.config.lastSyncDiario) : '';
+    
+    // Se o último sync não foi hoje e já passou das 06:00 (início do expediente), faz agora
+    if (ultimoSyncStr !== hojeStr) {
+      console.log('[Sync] Backup diário pendente detectado. Executando agora...');
+      executarSyncDiario();
+    }
   }
 
   navigate('dashboard');
@@ -843,6 +898,8 @@ async function executarSyncDiario() {
     // ✅ Salva backup JSON no Google Drive após o sync
     await salvarBackupGoogleDrive();
 
+    DB.config.lastSyncDiario = new Date().toISOString();
+    saveDB();
   } catch(e) {
     console.error('[Sync Diário] Erro:', e);
     showToast('⚠️ Falha na sincronização das 03:00. Verifique a conexão.', 'error');
@@ -868,6 +925,8 @@ async function salvarBackupGoogleDrive() {
     const data = await res.json();
     if (data.success) {
       console.log(`[Backup Drive] ✅ Backup salvo: ${data.nomeArquivo}`);
+      DB.config.lastBackupSync = new Date().toISOString();
+      saveDB();
       showToast(`☁️ Backup salvo no Drive: ${nomeArquivo}`, 'success');
     } else {
       console.warn('[Backup Drive] ⚠️ Erro ao salvar:', data.error);
@@ -1022,8 +1081,19 @@ function navigate(page){
 
 // ===================== HELPERS =====================
 function fmt(v){return 'R$ '+parseFloat(v||0).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.')}
-function fmtDate(iso){return iso?new Date(iso).toLocaleDateString('pt-BR'):''}
-function fmtDT(iso){return iso?new Date(iso).toLocaleString('pt-BR'):''}
+function fmtDate(iso){
+  if(!iso) return '';
+  // Evita o bug de fuso horário do JS que subtrai 1 dia ao dar parse em strings YYYY-MM-DD
+  const raw = String(iso).split('T')[0].split('-');
+  if (raw.length !== 3) return iso;
+  return `${raw[2]}/${raw[1]}/${raw[0]}`;
+}
+function fmtDT(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return iso;
+  return d.toLocaleString('pt-BR');
+}
 function getLocalISODate() {
   const d = new Date();
   const tzOffset = d.getTimezoneOffset() * 60000;
@@ -1103,28 +1173,42 @@ function opTag(op){
 }
 
 // ===================== DASHBOARD =====================
+// ===================== DASHBOARD =====================
 function renderDashboard(){
-  const hoje = today();
-  const vendasHoje = DB.vendas.filter(v => normData(v.data) === hoje);
-  const totalHoje = vendasHoje.reduce((s, v) => s + v.total, 0);
-  const custoHoje = vendasHoje.reduce((s, v) => s + v.custo, 0);
+  const hoje = getEffectiveDay(); 
+  const mesAtual = hoje.slice(0, 7);
   
+  // Dados de Hoje
+  const vendasHoje = DB.vendas.filter(v => {
+    const d = normData(v.data || v.dt);
+    return d === hoje;
+  });
+  const totalHoje = vendasHoje.reduce((s, v) => s + (v.total || 0), 0);
+  const custoHoje = vendasHoje.reduce((s, v) => s + (v.custo || 0), 0);
   const consumoHoje = (DB.consumos || []).filter(c => normData(c.data) === hoje);
   const custoConsumoHoje = consumoHoje.reduce((s, c) => {
     const p = DB.produtos.find(x => x.id === c.produtoId);
     return s + (p && p.custo ? p.custo * c.qtd : 0);
   }, 0);
-  const qtdConsumo = consumoHoje.reduce((s, c) => s + c.qtd, 0);
-
   const lucroHoje = totalHoje - custoHoje - custoConsumoHoje;
-  const mesAtual = hoje.slice(0, 7);
-  const totalVendasMes = DB.vendas.filter(v => normData(v.data).slice(0, 7) === mesAtual).reduce((s, v) => s + v.total, 0);
+  const abertos = (DB.mesas_abertas || []).length;
+  const pedidosHoje = vendasHoje.length + abertos;
 
+  // Dados do Mês
+  const vendasMes = DB.vendas.filter(v => normData(v.data).slice(0, 7) === mesAtual);
+  const totalVendasMes = vendasMes.reduce((s, v) => s + v.total, 0);
+  const custoVendasMes = vendasMes.reduce((s, v) => s + v.custo, 0);
+  const consumoMes = (DB.consumos || []).filter(c => normData(c.data).slice(0, 7) === mesAtual);
+  const custoConsumoMes = consumoMes.reduce((s, c) => {
+    const p = DB.produtos.find(x => x.id === c.produtoId);
+    return s + (p && p.custo ? p.custo * c.qtd : 0);
+  }, 0);
+  const comprasMes = (DB.compras || []).filter(c => normData(c.data).slice(0, 7) === mesAtual);
+  const totalComprasMes = comprasMes.reduce((s, c) => s + c.total, 0);
+  const lucroMes = totalVendasMes - custoVendasMes - custoConsumoMes;
+  const ticketMedioMes = totalVendasMes / (vendasMes.length || 1);
 
-  const produtosAlerta=DB.produtos.filter(p=>p.status==='ativo'&&p.estoque<=p.estoqueMin);
-
-  // === Novas Métricas: Ticket Médio & Pico de Horário ===
-  const ticketMedio = vendasHoje.length ? (totalHoje / vendasHoje.length) : 0;
+  // Pico de Horário (Hoje)
   const horasMap = {};
   vendasHoje.forEach(v => {
     if (v.dtAtualizacao) {
@@ -1138,113 +1222,129 @@ function renderDashboard(){
     if (qtd > maxVendasHora) { maxVendasHora = qtd; picoHora = `${h}h`; }
   }
 
-  // Blocos de consumo já calculados acima para o lucroHoje
+  // Totais por Operação (Hoje)
+  const totEsp = vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>{const p=DB.produtos.find(x=>x.id==i.produtoId);return p?.operacao==='Espetinho'}).reduce((a,i)=>a+i.subtotal,0),0);
+  const totBeb = vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>{const p=DB.produtos.find(x=>x.id==i.produtoId);return p?.operacao==='Bebidas'}).reduce((a,i)=>a+i.subtotal,0),0);
 
+  // Ranking (Hoje)
   const rankMap={};
   vendasHoje.forEach(v=>v.itens.forEach(i=>{
     rankMap[i.nome]=(rankMap[i.nome]||0)+i.qtd;
   }));
   const rank=Object.entries(rankMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
-  const vendasEsp=vendasHoje.filter(v=>v.operacao==='Espetinho'||v.itens.some(i=>{const p=DB.produtos.find(x=>x.id==i.produtoId);return p?.operacao==='Espetinho'}));
-  const vendasBeb=vendasHoje.filter(v=>!vendasEsp.includes(v));
-  const totEsp=vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>{const p=DB.produtos.find(x=>x.id==i.produtoId);return p?.operacao==='Espetinho'}).reduce((a,i)=>a+i.subtotal,0),0);
-  const totBeb=vendasHoje.reduce((s,v)=>s+v.itens.filter(i=>{const p=DB.produtos.find(x=>x.id==i.produtoId);return p?.operacao==='Bebidas'}).reduce((a,i)=>a+i.subtotal,0),0);
-  const abertos = (DB.mesas_abertas || []).length;
-  const qtdPedidosHoje = vendasHoje.length + abertos;
+  const produtosAlerta = DB.produtos.filter(p=>p.status==='ativo' && p.estoque<=p.estoqueMin);
 
   return `
-  ${produtosAlerta.length?`<div class="alert warning">⚠️ ${produtosAlerta.length} produto(s) com estoque baixo: ${produtosAlerta.map(p=>p.nome).join(', ')}</div>`:''}
-  <div class="grid-5 mb-4" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
-    <div class="stat-card blue">
+  ${produtosAlerta.length ? `<div class="alert warning">⚠️ <strong>Estoque Baixo:</strong> ${produtosAlerta.length} produtos precisam de atenção.</div>` : ''}
+
+  <div class="section-header">
+    <div class="topbar-title">📊 Resumo de Hoje</div>
+    <div class="topbar-badge">${fmtDate(hoje)}</div>
+  </div>
+
+  <div class="grid-4 mb-4">
+    <div class="stat-card amber">
       <div class="stat-label">Pedidos Hoje</div>
-      <div class="stat-value text-blue">${qtdPedidosHoje}</div>
+      <div class="stat-value text-amber">${pedidosHoje}</div>
       <div class="stat-sub">${vendasHoje.length} concluídos, ${abertos} abertos</div>
     </div>
-    <div class="stat-card amber">
+    <div class="stat-card blue">
       <div class="stat-label">Vendas Hoje</div>
-      <div class="stat-value text-amber">${fmt(totalHoje)}</div>
-      <div class="stat-sub">R$ finalizados hoje</div>
+      <div class="stat-value text-blue">${fmt(totalHoje)}</div>
+      <div class="stat-sub">Faturamento bruto do dia</div>
     </div>
     <div class="stat-card green">
-      <div class="stat-label">Lucro Bruto</div>
+      <div class="stat-label">Lucro Hoje</div>
       <div class="stat-value text-green">${fmt(lucroHoje)}</div>
-      <div class="stat-sub">Margem: ${totalHoje?((lucroHoje/totalHoje)*100).toFixed(1):0}%</div>
+      <div class="stat-sub">Pico de vendas: <strong>${picoHora}</strong></div>
     </div>
-    
-    <div class="stat-card" style="border-left: 4px solid #8b5cf6;">
-      <div class="stat-label">Ticket Médio</div>
-      <div class="stat-value" style="color:#8b5cf6">${fmt(ticketMedio)}</div>
-      <div class="stat-sub">Pico de vendas às: <strong>${picoHora}</strong></div>
+    <div class="stat-card red">
+      <div class="stat-label">Perdas (Hoje)</div>
+      <div class="stat-value text-red">${fmt(custoConsumoHoje)}</div>
+      <div class="stat-sub">Custo de consumo interno</div>
     </div>
-    <div class="stat-card red" style="border-left: 4px solid #ef4444;">
-      <div class="stat-label">Perdas / Consumo (Hoje)</div>
-      <div class="stat-value" style="color:#ef4444">${fmt(custoConsumoHoje)}</div>
-      <div class="stat-sub">${qtdConsumo} un. baixadas</div>
-    </div>
+  </div>
 
+  <div class="section-header">
+    <div class="topbar-title">🗓️ Resumo do Mês (${new Date().toLocaleString('pt-BR',{month:'long'})})</div>
+    <div class="topbar-badge">${mesAtual}</div>
+  </div>
+
+  <div class="grid-4 mb-4">
     <div class="stat-card blue">
-      <div class="stat-label">Vendas no Mês</div>
+      <div class="stat-label">Ganhos (Mês)</div>
       <div class="stat-value text-blue">${fmt(totalVendasMes)}</div>
-      <div class="stat-sub">${new Date().toLocaleString('pt-BR',{month:'long'})}</div>
+      <div class="stat-sub">Total faturado no mês</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Gastos (Mês)</div>
+      <div class="stat-value text-red">${fmt(totalComprasMes)}</div>
+      <div class="stat-sub">Total em compras de estoque</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Lucro Real</div>
+      <div class="stat-value text-green">${fmt(lucroMes)}</div>
+      <div class="stat-sub">Margem: ${totalVendasMes?((lucroMes/totalVendasMes)*100).toFixed(1):0}%</div>
     </div>
     <div class="stat-card purple">
-      <div class="stat-label">Produtos</div>
-      <div class="stat-value" style="color:var(--purple)">${DB.produtos.filter(p=>p.status==='ativo').length}</div>
-      <div class="stat-sub">${produtosAlerta.length} alertas</div>
+      <div class="stat-label">Ticket Médio</div>
+      <div class="stat-value" style="color:var(--purple)">${fmt(ticketMedioMes)}</div>
+      <div class="stat-sub">Média mensal por venda</div>
     </div>
   </div>
 
   <div class="grid-2 mb-4">
     <div class="card">
-      <div class="card-title">Por Operação – Hoje</div>
-      <div class="flex items-center justify-between mb-3">
-        <div class="flex items-center gap-2"><span class="op-dot op1"></span><span>Espetinho</span></div>
-        <span class="text-amber mono">${fmt(totEsp)}</span>
-      </div>
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2"><span class="op-dot op2"></span><span>Bebidas/Bomboniere</span></div>
-        <span class="text-blue mono">${fmt(totBeb)}</span>
+      <div class="card-title">🚀 Top 5 – Hoje</div>
+      <div style="display:flex; flex-direction:column; gap:8px">
+        ${rank.length ? rank.map(([n, q]) => `
+          <div class="flex justify-between items-center">
+            <span style="font-size:13px; color:var(--text2)">${n}</span>
+            <span class="badge blue">${q} un</span>
+          </div>`).join('') : '<div class="text-muted" style="text-align:center; padding:10px">Sem vendas ainda</div>'}
       </div>
     </div>
     <div class="card">
-      <div class="card-title">Ranking de Hoje</div>
-      ${rank.length?rank.map(([n,q])=>`
-        <div class="flex items-center justify-between mb-2">
-          <span style="font-size:13px">${n}</span>
-          <span class="badge amber">${q} un</span>
-        </div>`).join(''):'<div class="empty-state" style="padding:20px"><div class="icon">📊</div>Sem vendas ainda</div>'}
+      <div class="card-title">💳 Totais por Operação – Hoje</div>
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2"><span class="op-dot op1"></span><span style="font-size:13px">Espetinho</span></div>
+        <span class="text-amber mono" style="font-weight:600">${fmt(totEsp)}</span>
+      </div>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2"><span class="op-dot op2"></span><span style="font-size:13px">Bebidas/Geral</span></div>
+        <span class="text-blue mono" style="font-weight:600">${fmt(totBeb)}</span>
+      </div>
     </div>
   </div>
 
   <div class="card">
-    <div class="section-header">
-      <div class="card-title" style="margin:0">Últimas Vendas</div>
-      <div class="flex gap-2">
-        <button class="btn btn-ghost btn-sm" onclick="gerarQRCodeMesa()">📱 QR Code Mesas</button>
-        <button class="btn btn-ghost btn-sm" onclick="navigate('vendas')">Nova Venda +</button>
-      </div>
+    <div class="section-header" style="margin-bottom:12px">
+      <div class="card-title" style="margin:0">🛍️ Últimas Vendas</div>
+      <button class="btn btn-ghost btn-sm" onclick="currentPage='caixa'; navigate('caixa')">Ver Tudo →</button>
     </div>
-    ${DB.vendas.length===0?'<div class="empty-state"><div class="icon">🛒</div>Nenhuma venda registrada</div>':''}
-    ${DB.vendas.length?`<div class="table-wrap"><table>
-      <thead><tr><th>#</th><th>Data</th><th>Itens</th><th>Tipo</th><th>Pagamento</th><th>Total</th><th>Ação</th></tr></thead>
-      <tbody>${DB.vendas.slice(-10).reverse().map(v=>`
-        <tr>
-          <td class="mono">#${v.id}</td>
-          <td>${fmtDate(v.data)}</td>
-          <td>${v.itens.map(i=>i.nome+' x'+i.qtd).join(', ')}</td>
-          <td><span class="badge blue">${v.tipo}</span></td>
-          <td><span class="badge green">${v.pagamento}</span></td>
-          <td class="text-amber mono">${fmt(v.total)}</td>
-          <td>
-            <div class="flex" style="gap:4px">
-              <button class="btn btn-ghost btn-sm" onclick="reimprimirVenda('${v.id}')" title="Imprimir Cupom">🖨️</button>
-              ${currentUser.role==='admin'||currentUser.role==='dev'?`<button class="btn btn-danger btn-sm" onclick="estornarVenda('${v.id}')" title="Estornar/Cancelar Venda">✖</button>`:''}
-            </div>
-          </td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>`:''}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Data/Hora</th>
+            <th>Cliente</th>
+            <th>Pagamento</th>
+            <th style="text-align:right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${[...DB.vendas].sort((a,b) => new Date(b.dt || b.data) - new Date(a.dt || a.data)).slice(0, 10).map(v => `
+            <tr>
+              <td class="mono" style="font-size:11px">${v.dt ? v.dt.split('T')[0].split('-').slice(1).reverse().join('/') + ' ' + v.dt.split('T')[1].slice(0,5) : '-'}</td>
+              <td style="font-weight:600">${v.cliente || 'Consumidor'}</td>
+              <td><span class="badge green">${v.pagamento}</span></td>
+              <td class="text-amber mono" style="text-align:right; font-weight:700">${fmt(v.total)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
   </div>`;
 }
 
@@ -3049,11 +3149,11 @@ function imprimirResumoSemana() {
   semanaStart.setDate(targetDateObj.getDate() - diasDesdeQuinta);
   const semanaEnd = new Date(semanaStart);
   semanaEnd.setDate(semanaStart.getDate() + 4);
-  const semanaStartStr = normDataLocal(semanaStart.toISOString());
-  const semanaEndStr = normDataLocal(semanaEnd.toISOString());
+  const semanaStartStr = normData(semanaStart.toISOString());
+  const semanaEndStr = normData(semanaEnd.toISOString());
 
   const vendasSemana = DB.vendas.filter(v => {
-    const vDate = normDataLocal(v.data);
+    const vDate = normData(v.data);
     return vDate >= semanaStartStr && vDate <= semanaEndStr;
   });
 
@@ -3061,7 +3161,7 @@ function imprimirResumoSemana() {
   const custoSemana = vendasSemana.reduce((s,v) => s+v.itens.reduce((si,i)=>si+(i.custo||0)*i.qtd,0), 0);
 
   const consumosSemana = (DB.consumos||[]).filter(c => {
-    const cDate = normDataLocal(c.data);
+    const cDate = normData(c.data);
     return cDate >= semanaStartStr && cDate <= semanaEndStr;
   });
   const custoConsumoSemana = consumosSemana.reduce((s,c) => {
@@ -3077,8 +3177,8 @@ function imprimirResumoSemana() {
   const diasHtml = nomesDias.map((nome, i) => {
     const d = new Date(semanaStart);
     d.setDate(semanaStart.getDate() + i);
-    const dStr = normDataLocal(d.toISOString());
-    const vendasDia = vendasSemana.filter(v => normDataLocal(v.data) === dStr);
+    const dStr = normData(d.toISOString());
+    const vendasDia = vendasSemana.filter(v => normData(v.data) === dStr);
     const totalDia = vendasDia.reduce((s,v)=>s+v.total,0);
     const custoDia = vendasDia.reduce((s,v)=>s+v.itens.reduce((si,i)=>si+(i.custo||0)*i.qtd,0),0);
     const lucroDia = totalDia - custoDia;
@@ -3371,7 +3471,9 @@ function renderBackup(){
         <p class="text-muted mb-4" style="font-size:13px">Todo dia às <strong>03:00</strong> o sistema salva automaticamente um arquivo <code>backup_conveniencia_DD-MM-AAAA.json</code> na pasta <strong>"Backups Conveniencia"</strong> do seu Google Drive. Você pode também forçar um backup agora para testar.</p>
         <div class="flex" style="gap:10px; align-items:center; flex-wrap:wrap">
           <button class="btn btn-primary" style="background:#22c55e; border-color:#22c55e" id="btnBackupDrive" onclick="testarBackupDrive()">☁️ Salvar Backup Agora no Drive</button>
-          <span id="backupDriveStatus" style="font-size:13px; color:var(--text2)"></span>
+          <span id="backupDriveStatus" style="font-size:13px; color:var(--text2)">
+            ${DB.config?.lastBackupSync ? `✅ Último backup automático: ${new Date(DB.config.lastBackupSync).toLocaleString('pt-BR')}` : '⚠️ Nenhum backup automático registrado recentemente.'}
+          </span>
         </div>
       </div>
 
