@@ -1346,6 +1346,7 @@ function renderDashboard(){
             <th>Cliente</th>
             <th>Pagamento</th>
             <th style="text-align:right">Total</th>
+            <th style="text-align:center">Ação</th>
           </tr>
         </thead>
         <tbody>
@@ -1355,6 +1356,9 @@ function renderDashboard(){
               <td style="font-weight:600">${v.cliente || 'Consumidor'}</td>
               <td><span class="badge green">${v.pagamento}</span></td>
               <td class="text-amber mono" style="text-align:right; font-weight:700">${fmt(v.total)}</td>
+              <td style="text-align:center">
+                <button class="btn btn-danger btn-sm" onclick="estornarVenda('${v.id}')" title="Estornar Venda" style="padding:2px 6px; font-size:10px;">Estornar</button>
+              </td>
             </tr>
           `).join('')}
         </tbody>
@@ -1469,6 +1473,25 @@ function renderVendas(){
         </div>
       </div>
     </div>
+  </div>
+
+  <div class="card mt-4">
+    <div class="card-title">🛍️ Vendas Recentes (Hoje)</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Hora</th>
+            <th>Cliente</th>
+            <th>Total</th>
+            <th style="text-align:center">Ação</th>
+          </tr>
+        </thead>
+        <tbody id="vendasRecentesVenda">
+          <!-- Preenchido pelo initVendas -->
+        </tbody>
+      </table>
+    </div>
   </div>`;
 }
 
@@ -1477,6 +1500,7 @@ function initVendas(){
   selectedOp='todos';
   renderProdutos_venda();
   updateCart();
+  renderVendasRecentes_venda(); // <--- Adicionado
   ['todos','Espetinho','Bebidas'].forEach(op=>{
     const btn=document.getElementById('opBtn-'+op);
     if(btn){
@@ -1490,6 +1514,31 @@ function initVendas(){
       });
     }
   });
+}
+
+function renderVendasRecentes_venda() {
+  const el = document.getElementById('vendasRecentesVenda');
+  if(!el) return;
+  const hoje = getEffectiveDay();
+  const vendas = DB.vendas.filter(v => normData(v.data) === hoje)
+                          .sort((a,b) => new Date(b.dt || b.data) - new Date(a.dt || a.data))
+                          .slice(0, 5);
+  
+  if (vendas.length === 0) {
+    el.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 15px;">Nenhuma venda hoje.</td></tr>';
+    return;
+  }
+  
+  el.innerHTML = vendas.map(v => `
+    <tr>
+      <td class="mono" style="font-size:12px">${v.hora || (v.dt ? v.dt.split('T')[1].slice(0,5) : '-')}</td>
+      <td class="fw-bold">${v.cliente || 'Consumidor'}</td>
+      <td class="text-amber fw-bold">${fmt(v.total)}</td>
+      <td style="text-align:center">
+        <button class="btn btn-danger btn-sm" onclick="estornarVenda('${v.id}')" style="padding: 2px 8px; font-size: 10px;">Estornar</button>
+      </td>
+    </tr>
+  `).join('');
 }
 
 function renderProdutos_venda(){
@@ -1659,6 +1708,14 @@ window.calcMisto = function() {
 }
 
 function finalizarVendaDoModal(totalEsperado) {
+  // Proteção contra clique duplo
+  const btn = document.querySelector('.modal-footer .btn-primary');
+  if(btn) {
+    if(btn.disabled) return;
+    btn.disabled = true;
+    btn.innerHTML = '🕒 Processando...';
+  }
+
   const pag = document.getElementById('vendaPagModal').value;
   let formatedPag = pag;
   let mistoJson = null;
@@ -1673,6 +1730,7 @@ function finalizarVendaDoModal(totalEsperado) {
       // permitimos passar com troco, mas se sum for menor que o esperado, avisa
       if (sum < (totalEsperado - 0.05)) { // margem de erro
          showToast('Cobre o valor total da mesa!', 'error');
+         if(btn) { btn.disabled = false; btn.innerHTML = '✅ Confirmar Recebimento'; }
          return;
       }
       mistoJson = { pix: p, dinheiro: d, credito: c, debito: b, troco: (sum - totalEsperado) };
@@ -3136,6 +3194,37 @@ function renderCaixa(){
         Considere aumentar o estoque destes itens para garantir que não faltem nos próximos dias.
       </div>
     </div>
+  </div>
+  
+  <div class="card mt-4">
+    <div class="card-title">📝 Lista de Vendas do Dia</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Hora</th>
+            <th>Cliente</th>
+            <th>Pagamento</th>
+            <th style="text-align:right">Total</th>
+            <th style="text-align:center">Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${vendasHoje.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding: 20px;">Nenhuma venda registrada neste dia.</td></tr>' : 
+            vendasHoje.sort((a,b) => new Date(b.dt || b.data) - new Date(a.dt || a.data)).map(v => `
+              <tr>
+                <td class="mono" style="font-size:12px">${v.hora || (v.dt ? v.dt.split('T')[1].slice(0,5) : '-')}</td>
+                <td style="font-weight:600">${v.cliente || 'Consumidor'}</td>
+                <td><span class="badge green" style="font-size:10px">${v.pagamento}</span></td>
+                <td class="text-amber mono" style="text-align:right; font-weight:700">${fmt(v.total)}</td>
+                <td style="text-align:center">
+                  <button class="btn btn-ghost btn-sm" onclick="estornarVenda('${v.id}')" title="Estornar Venda" style="color:var(--red); border-color:transparent; padding:0 5px;">✖</button>
+                </td>
+              </tr>
+            `).join('')}
+        </tbody>
+      </table>
+    </div>
   </div>`;
 }
 
@@ -3695,9 +3784,14 @@ function estornarVenda(id){
   DB.vendas.splice(idx, 1);
   saveDB();
   showToast('Venda estornada com sucesso.', 'info');
-  // Se estiver na tela do Dashboard, recarrega
+  
+  // Recarrega a tela atual para refletir as mudanças
   if(currentPage==='dashboard') {
     document.getElementById('content').innerHTML = renderDashboard();
+  } else if(currentPage==='caixa') {
+    document.getElementById('content').innerHTML = renderCaixa();
+  } else {
+    navigate(currentPage);
   }
 }
 
