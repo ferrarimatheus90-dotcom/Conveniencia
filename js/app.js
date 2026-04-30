@@ -423,11 +423,7 @@ function repairDB() {
 async function syncToGoogleSheets() {
   if (!GOOGLE_SHEETS_URL) return;
   try {
-    await fetch(GOOGLE_SHEETS_URL, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'sincronizar', db: DB }),
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' } 
-    });
+    await _gsPost({ action: 'sincronizar', db: DB });
     DB.config.lastSyncDiario = new Date().toISOString();
     saveDB();
   } catch(e) {
