@@ -2950,24 +2950,24 @@ function excluirProduto(id){
 
 // ===================== USUÁRIOS =====================
 function renderUsuarios(){
+  const u = currentUser || {};
   return `
   <div class="card">
     <div class="card-title">👥 Usuários do Sistema</div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>ID</th><th>Nome</th><th>Usuário</th><th>Perfil</th><th>Acesso</th></tr></thead>
-        <tbody>${USERS.map(u=>`
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Acesso</th></tr></thead>
+        <tbody>
           <tr>
-            <td class="mono">#${u.id}</td>
-            <td><strong>${u.name}</strong></td>
-            <td class="mono">${u.username}</td>
-            <td><span class="badge ${u.role==='admin'?'purple':'blue'}">${u.role}</span></td>
-            <td class="text-muted" style="font-size:12px">${u.role==='admin'?'Acesso completo':'Somente vendas'}</td>
-          </tr>`).join('')}
+            <td><strong>${escapeHTML(u.name || '')}</strong></td>
+            <td class="mono">${escapeHTML(u.email || u.username || '')}</td>
+            <td><span class="badge ${u.role==='admin'||u.role==='dev'?'purple':'blue'}">${escapeHTML(u.role || '')}</span></td>
+            <td class="text-muted" style="font-size:12px">${u.role==='admin'||u.role==='dev'?'Acesso completo':'Somente vendas'}</td>
+          </tr>
         </tbody>
       </table>
     </div>
-    <div class="alert warning mt-3">ℹ️ Para adicionar usuários, edite o array USERS no código-fonte. Em versão futura, este módulo permitirá CRUD completo de usuários.</div>
+    <div class="alert warning mt-3">ℹ️ Gerencie os usuários diretamente no painel do Supabase (Authentication &gt; Users).</div>
   </div>`;
 }
 
