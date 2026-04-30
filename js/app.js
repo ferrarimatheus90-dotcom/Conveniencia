@@ -938,14 +938,10 @@ async function executarSyncDiario() {
   console.log('[Sync Diário] Executando sincronização das 03:00...');
   try {
     // 1. Envia dados locais para a planilha
-    await fetch(GOOGLE_SHEETS_URL, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'sincronizar', db: DB }),
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
-    });
+    await _gsPost({ action: 'sincronizar', db: DB });
 
     // 2. Puxa os dados remotos e faz merge
-    const res = await fetch(GOOGLE_SHEETS_URL + '?action=carregar');
+    const res = await _gsGet('carregar');
     const remoteDb = await res.json();
     const hasUpdates = mergeRemoteDB(remoteDb);
 
