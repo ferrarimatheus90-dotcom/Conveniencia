@@ -67,11 +67,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-const USERS = [
-  {id:0,username:'dev',password:'dev@2026',role:'dev',name:'Desenvolvedor'},
-  {id:1,username:'admin',password:'Conveniencia@2005#',role:'admin',name:'Administrador'},
-  {id:2,username:'vendedor',password:'vendedor@2026',role:'funcionario',name:'Vendedor'}
-];
 
 let DB = JSON.parse(localStorage.getItem('convpro_db') || 'null') || {
   produtos: [
