@@ -818,9 +818,9 @@ function finishLogin(user, rem){
   if(btn) { btn.innerHTML = 'Entrar'; btn.disabled = false; }
   
   if(rem) {
-    localStorage.setItem('convpro_savedLogin', JSON.stringify({u: user.username, p: user.password}));
+    localStorage.setItem('convpro_savedUser', user.email || user.username);
   } else {
-    localStorage.removeItem('convpro_savedLogin');
+    localStorage.removeItem('convpro_savedUser');
   }
   currentUser=user;
   document.getElementById('loginScreen').style.display='none';
