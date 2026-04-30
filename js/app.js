@@ -440,11 +440,7 @@ window.forceSync = function() {
   const btn = document.getElementById('btnSyncCloud');
   if(btn) btn.innerHTML = '⏳ Enviando...';
   
-  fetch(GOOGLE_SHEETS_URL, {
-    method: 'POST',
-    body: JSON.stringify({ action: 'sincronizar', db: DB }),
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' }
-  }).then(r => r.json()).then(res => {
+  _gsPost({ action: 'sincronizar', db: DB }).then(r => r.json()).then(res => {
     if(btn) btn.innerHTML = '☁️ Sincronizar';
     if(res.success) {
       showToast('A Planilha foi atualizada com sucesso!', 'success');
