@@ -621,7 +621,13 @@ function showOrderToast(title, sub) {
   if (!container) return;
   const div = document.createElement('div');
   div.className = 'toast order-toast';
-  div.innerHTML = `<div>${title}</div><div class="toast-sub">${sub}</div>`;
+  const titleEl = document.createElement('div');
+  titleEl.textContent = title;
+  const subEl = document.createElement('div');
+  subEl.className = 'toast-sub';
+  subEl.textContent = sub;
+  div.appendChild(titleEl);
+  div.appendChild(subEl);
   div.onclick = () => { div.remove(); toggleNotifPanel(); };
   div.style.cursor = 'pointer';
   container.appendChild(div);
