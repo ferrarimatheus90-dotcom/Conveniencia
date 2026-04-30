@@ -3735,7 +3735,7 @@ async function puxarDoGoogleSheets() {
    }
    showToast('Buscando dados na planilha... aguarde', 'info');
    try {
-      const res = await fetch(GOOGLE_SHEETS_URL + "?action=carregar");
+      const res = await _gsGet('carregar');
       const remoteDb = await res.json();
       if(remoteDb && remoteDb.produtos) {
          // Mescla em vez de substituir cegamente para segurança
