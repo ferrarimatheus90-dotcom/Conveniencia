@@ -3597,6 +3597,10 @@ function renderBackup(){
             <label class="form-label">Web App URL (Apps Script)</label>
             <input type="text" id="gsUrlInput" class="form-control" value="${GOOGLE_SHEETS_URL}" placeholder="https://script.google.com/macros/s/...">
           </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Token de Acesso (API_TOKEN do Apps Script)</label>
+            <input type="password" id="gsTokenInput" class="form-control" value="${GOOGLE_SHEETS_TOKEN}" placeholder="Token secreto definido nas propriedades do script">
+          </div>
           <div class="flex" style="gap:10px">
             <button class="btn btn-primary" onclick="salvarConfigGS()">Vincular URL</button>
             <button class="btn btn-ghost" onclick="puxarDoGoogleSheets()"><span class="icon">🔄</span> Puxar (Planilha ➞ Sistema)</button>
