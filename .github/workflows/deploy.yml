@@ -11,4 +11,4 @@ jobs:
     steps:
       - name: Trigger Hostinger Webhook
         run: |
-          curl -X POST "https://webhooks.hostinger.com/deploy/84740d6f7815a9f4fee322741d8edbce"
+          curl -X POST "${{ secrets.HOSTINGER_DEPLOY_WEBHOOK }}"
