@@ -82,6 +82,14 @@ function doPost(e) {
   }
   try {
     var payload = JSON.parse(e.postData.contents);
+
+    var expectedToken = _getApiToken();
+    // novo_pedido é enviado pelo cliente final (cardápio digital), portanto não exige token
+    if (payload.action !== 'novo_pedido') {
+      if (!expectedToken || payload.token !== expectedToken) {
+        return _unauthorized();
+      }
+    }
     
     if (payload.action === 'sincronizar') {
       var db = payload.db;
