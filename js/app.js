@@ -162,7 +162,14 @@ let currentUser = null;
 let syncPending = false;
 let retrySyncTimeout = null;
 let currentPage = 'dashboard';
-let GOOGLE_SHEETS_URL = localStorage.getItem('convpro_gs_url') || 'https://script.google.com/macros/s/AKfycbw2-zau41VnCdOV0-HxcmDOeQSaSlciv4Cs8dOnxCkrP2MWTJYNXoHVtDVL9vEgo_wkGw/exec';
+const _GOOGLE_SHEETS_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbw2-zau41VnCdOV0-HxcmDOeQSaSlciv4Cs8dOnxCkrP2MWTJYNXoHVtDVL9vEgo_wkGw/exec';
+function _isAllowedGSUrl(url) {
+  try { return new URL(url).hostname === 'script.google.com'; } catch { return false; }
+}
+let GOOGLE_SHEETS_URL = (() => {
+  const s = localStorage.getItem('convpro_gs_url');
+  return (s && _isAllowedGSUrl(s)) ? s : _GOOGLE_SHEETS_URL_DEFAULT;
+})();
 
 async function saveDB(){
   repairDB(); // Garante integridade antes de salvar
