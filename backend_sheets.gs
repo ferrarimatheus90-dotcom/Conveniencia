@@ -2,11 +2,33 @@
 // BACKEND GOOGLE SHEETS - CONVENIÊNCIA OLIVEIRA
 // ==========================================
 
+// Token de acesso — defina em: Arquivo > Propriedades do projeto > Propriedades do script
+// Adicione a propriedade "API_TOKEN" com um valor secreto longo e aleatório.
+// O front-end deve enviar esse token no parâmetro "token" (GET) ou campo "token" (POST).
+function _getApiToken() {
+  return PropertiesService.getScriptProperties().getProperty('API_TOKEN') || '';
+}
+
+function _unauthorized() {
+  return ContentService
+    .createTextOutput(JSON.stringify({success: false, error: 'Não autorizado.'}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 function doGet(e) {
   if (!e || !e.parameter) {
     return ContentService.createTextOutput(JSON.stringify({status: "Por favor, não execute esta função diretamente. Use a URL gerada na implantação ou execute configurarPlanilhaInicial()."})).setMimeType(ContentService.MimeType.JSON);
   }
+
+  var expectedToken = _getApiToken();
   var action = e.parameter.action;
+
+  // carregar_cardapio é público (lido pelo cliente final no cardápio digital)
+  if (action !== 'carregar_cardapio') {
+    if (!expectedToken || e.parameter.token !== expectedToken) {
+      return _unauthorized();
+    }
+  }
   
   if (action === 'carregar') {
     var db = {
