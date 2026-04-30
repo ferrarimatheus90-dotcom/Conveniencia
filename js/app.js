@@ -820,7 +820,7 @@ async function doLogin(){
       if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
       if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
     } else if (GOOGLE_SHEETS_URL) {
-      fetch(GOOGLE_SHEETS_URL + '?action=carregar')
+      _gsGet('carregar')
         .then(r => r.json())
         .then(remoteDb => {
             const hasUpdates = mergeRemoteDB(remoteDb);
