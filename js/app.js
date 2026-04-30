@@ -553,7 +553,7 @@ function dispararAlertaPedido(pedidos) {
   // 4. Toast especial grande
   try {
     const qtdPed = pedidos.length;
-    const mesas = pedidos.map(p => p.cliente).join(', ');
+    const mesas = pedidos.map(p => escapeHTML(p.cliente)).join(', ');
     showOrderToast(`🔔 ${qtdPed} novo(s) pedido(s)!`, `Mesa/Cliente: ${mesas} — Clique no sininho para ver detalhes`);
   } catch(e){}
 
