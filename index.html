@@ -99,8 +99,11 @@
   <div class="modal" id="modalContent"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Versões fixadas para auditoria. Para adicionar SRI: gere os hashes em
+     https://www.srihash.org ou via `openssl dgst -sha384 -binary <arquivo> | openssl base64 -A`
+     e adicione integrity="sha384-<hash>" crossorigin="anonymous" em cada tag. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
 <script src="js/app.js?v=2026.4.25"></script>
 </body>
 </html>
