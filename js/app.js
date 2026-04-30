@@ -3723,10 +3723,13 @@ window.importarEstoqueInicial = function() {
 
 function salvarConfigGS() {
    const val = document.getElementById('gsUrlInput').value.trim();
-   GOOGLE_SHEETS_URL = val;
-   localStorage.setItem('convpro_gs_url', val);
+   if (val && !_isAllowedGSUrl(val)) {
+     showToast('URL inválida. Apenas URLs do script.google.com são permitidas.', 'error');
+     return;
+   }
+   GOOGLE_SHEETS_URL = val || _GOOGLE_SHEETS_URL_DEFAULT;
+   localStorage.setItem('convpro_gs_url', GOOGLE_SHEETS_URL);
    showToast('URL do Google associada com sucesso!', 'success');
-   // Sincroniza logo de cara as variáveis para criar as planilhas pra ele
    if (val !== '') {
      syncToGoogleSheets();
      showToast('Subindo base local para a planilha pela 1ª vez...', 'info');
