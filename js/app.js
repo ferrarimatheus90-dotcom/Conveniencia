@@ -3729,7 +3729,12 @@ function salvarConfigGS() {
    }
    GOOGLE_SHEETS_URL = val || _GOOGLE_SHEETS_URL_DEFAULT;
    localStorage.setItem('convpro_gs_url', GOOGLE_SHEETS_URL);
-   showToast('URL do Google associada com sucesso!', 'success');
+
+   const tok = (document.getElementById('gsTokenInput')?.value || '').trim();
+   GOOGLE_SHEETS_TOKEN = tok;
+   localStorage.setItem('convpro_gs_token', tok);
+
+   showToast('Configuração do Google Sheets salva!', 'success');
    if (val !== '') {
      syncToGoogleSheets();
      showToast('Subindo base local para a planilha pela 1ª vez...', 'info');
