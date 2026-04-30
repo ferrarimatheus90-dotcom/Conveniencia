@@ -1412,7 +1412,7 @@ function renderDashboard(){
 function gerarQRCodeMesa(){
   const mesas = [1,2,3,4,5,6,7,8,9,10];
   const currentUrl = window.location.href.split('index.html')[0] + 'cardapio.html';
-  const gsParam = GOOGLE_SHEETS_URL ? '&gs=' + encodeURIComponent(GOOGLE_SHEETS_URL) : '';
+  const gsParam = '';
   
   openModal(`
     <div class="modal-title">📱 Gerar QR Code - Cardápio Digital</div>
