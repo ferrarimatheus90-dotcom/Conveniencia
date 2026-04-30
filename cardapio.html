@@ -294,9 +294,6 @@ async function initMenu() {
     if(urlParams.has('mesa')) {
         mesaNumber = 'Mesa ' + urlParams.get('mesa');
     }
-    if(urlParams.has('gs')) {
-        GOOGLE_SHEETS_URL = decodeURIComponent(urlParams.get('gs'));
-    }
     document.getElementById('mesaDisplay').textContent = mesaNumber;
 
     let produtos = [];
