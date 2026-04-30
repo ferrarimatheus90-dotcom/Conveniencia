@@ -171,6 +171,25 @@ let GOOGLE_SHEETS_URL = (() => {
   return (s && _isAllowedGSUrl(s)) ? s : _GOOGLE_SHEETS_URL_DEFAULT;
 })();
 
+// Token de acesso ao backend Google Sheets.
+// Deve ser idêntico ao valor da propriedade "API_TOKEN" configurada no Apps Script.
+// Configure via Configurações > Integração Google Sheets na interface do sistema.
+let GOOGLE_SHEETS_TOKEN = localStorage.getItem('convpro_gs_token') || '';
+
+function _gsGet(action) {
+  const sep = GOOGLE_SHEETS_TOKEN ? '&token=' + encodeURIComponent(GOOGLE_SHEETS_TOKEN) : '';
+  return fetch(GOOGLE_SHEETS_URL + '?action=' + action + sep);
+}
+
+function _gsPost(payload) {
+  const body = GOOGLE_SHEETS_TOKEN ? Object.assign({ token: GOOGLE_SHEETS_TOKEN }, payload) : payload;
+  return fetch(GOOGLE_SHEETS_URL, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+  });
+}
+
 async function saveDB(){
   repairDB(); // Garante integridade antes de salvar
   localStorage.setItem('convpro_db',JSON.stringify(DB)); // Backup local rápido
