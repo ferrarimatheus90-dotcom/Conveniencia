@@ -974,13 +974,8 @@ async function salvarBackupGoogleDrive() {
   try {
     const dataHoje = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
     const nomeArquivo = `backup_conveniencia_${dataHoje}.json`;
-    const payload = JSON.stringify({ action: 'salvar_backup_drive', nomeArquivo, db: DB });
 
-    const res = await fetch(GOOGLE_SHEETS_URL, {
-      method: 'POST',
-      body: payload,
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
-    });
+    const res = await _gsPost({ action: 'salvar_backup_drive', nomeArquivo, db: DB });
     const data = await res.json();
     if (data.success) {
       console.log(`[Backup Drive] ✅ Backup salvo: ${data.nomeArquivo}`);
