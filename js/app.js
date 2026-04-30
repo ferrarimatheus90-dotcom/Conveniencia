@@ -480,7 +480,7 @@ function requestNotificationPermission() {
 async function checkPedidosDigitais() {
   if (!GOOGLE_SHEETS_URL) return;
   try {
-    const res = await fetch(GOOGLE_SHEETS_URL + '?action=get_pedidos');
+    const res = await _gsGet('get_pedidos');
     const data = await res.json();
     if(data && data.pedidos_novos && data.pedidos_novos.length > 0) {
       let notify = false;
