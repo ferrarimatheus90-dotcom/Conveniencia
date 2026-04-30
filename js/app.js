@@ -18,37 +18,52 @@ window.toggleTheme = function() {
   const btnLogin = document.getElementById('btnThemeToggleLogin');
   if (btnLogin) btnLogin.innerHTML = icon;
 }
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   const icon = currentTheme === 'light' ? '🌙' : '☀️';
   const btn = document.getElementById('btnThemeToggle');
   if (btn) btn.innerHTML = icon;
   const btnLogin = document.getElementById('btnThemeToggleLogin');
   if (btnLogin) btnLogin.innerHTML = icon;
 
-  const savedLogin = localStorage.getItem('convpro_savedLogin');
-  if (savedLogin) {
-    try {
-      const data = JSON.parse(savedLogin);
-      if (document.getElementById('loginUser')) document.getElementById('loginUser').value = data.u || '';
-      if (document.getElementById('loginPass')) document.getElementById('loginPass').value = data.p || '';
-      if (document.getElementById('loginRemember')) document.getElementById('loginRemember').checked = true;
-      setTimeout(doLogin, 300); // Auto login para puxar atualizado assim que abrir!
-      
-      // AUTO-REPARO DE IDs DUPLICADOS (devido ao bug de precisão de versões anteriores)
-      const idsCache = new Set();
-      let fixedCount = 0;
-      DB.produtos.forEach(p => {
-        if (idsCache.has(String(p.id))) {
-          p.id = Date.now().toString() + Math.random().toString(36).substring(2, 7);
-          fixedCount++;
-        }
-        idsCache.add(String(p.id));
-      });
-      if (fixedCount > 0) {
-          console.warn(`[REPARO] ${fixedCount} IDs duplicados foram corrigidos.`);
-          saveDB();
+  // AUTO-REPARO DE IDs DUPLICADOS
+  try {
+    const idsCache = new Set();
+    let fixedCount = 0;
+    DB.produtos.forEach(p => {
+      if (idsCache.has(String(p.id))) {
+        p.id = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+        fixedCount++;
       }
-    } catch(e) { console.error("Erro no auto-reparo:", e); }
+      idsCache.add(String(p.id));
+    });
+    if (fixedCount > 0) {
+        console.warn(`[REPARO] ${fixedCount} IDs duplicados foram corrigidos.`);
+        saveDB();
+    }
+  } catch(e) { console.error("Erro no auto-reparo:", e); }
+
+  // Verifica sessão Supabase ativa (sem precisar de credenciais salvas)
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      const meta = session.user.user_metadata || {};
+      const user = {
+        id: session.user.id,
+        username: session.user.email,
+        email: session.user.email,
+        role: meta.role || 'funcionario',
+        name: meta.name || session.user.email
+      };
+      finishLogin(user, false);
+      return;
+    }
+  } catch(e) { console.warn("Erro ao verificar sessão:", e); }
+
+  // Sem sessão ativa: restaura apenas o email/usuário (nunca a senha)
+  const savedUser = localStorage.getItem('convpro_savedUser');
+  if (savedUser) {
+    if (document.getElementById('loginUser')) document.getElementById('loginUser').value = savedUser;
+    if (document.getElementById('loginRemember')) document.getElementById('loginRemember').checked = true;
   }
 });
 
