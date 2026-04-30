@@ -891,7 +891,10 @@ function finishLogin(user, rem){
   // Sincronização ao fechar o navegador
   window.addEventListener('beforeunload', () => {
     if (GOOGLE_SHEETS_URL) {
-      navigator.sendBeacon(GOOGLE_SHEETS_URL, JSON.stringify({ action: 'sincronizar', db: DB }));
+      const _beaconBody = GOOGLE_SHEETS_TOKEN
+        ? JSON.stringify({ action: 'sincronizar', token: GOOGLE_SHEETS_TOKEN, db: DB })
+        : JSON.stringify({ action: 'sincronizar', db: DB });
+      navigator.sendBeacon(GOOGLE_SHEETS_URL, _beaconBody);
     }
   });
 }
