@@ -763,26 +763,43 @@ function clearAllNotifications() {
 }
 
 // ===================== AUTH =====================
-function doLogin(){
-  const u=document.getElementById('loginUser').value.trim();
-  const p=document.getElementById('loginPass').value;
-  const rem=document.getElementById('loginRemember') ? document.getElementById('loginRemember').checked : false;
-  const user=USERS.find(x=>x.username===u&&x.password===p);
-  if(!user){document.getElementById('loginError').style.display='block';return}
-  
+async function doLogin(){
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  const rem = document.getElementById('loginRemember') ? document.getElementById('loginRemember').checked : false;
+
+  const btn = document.querySelector('.login-btn');
+  if(btn) { btn.innerHTML = 'Entrando...'; btn.disabled = true; }
+
+  const { data, error } = await sb.auth.signInWithPassword({ email: u, password: p });
+
+  if(btn) { btn.innerHTML = 'Entrar'; btn.disabled = false; }
+
+  if(error || !data.user) {
+    document.getElementById('loginError').style.display='block';
+    return;
+  }
+
   document.getElementById('loginError').style.display='none';
-  
-  // Entra imediatamente com os dados locais para garantir acesso rápido
+
+  const meta = data.user.user_metadata || {};
+  const user = {
+    id: data.user.id,
+    username: data.user.email,
+    email: data.user.email,
+    role: meta.role || 'funcionario',
+    name: meta.name || data.user.email
+  };
+
   finishLogin(user, rem);
 
-  // Sincronização em background: Tenta carregar do Supabase primeiro (MAIS RÁPIDO E MODERNO)
+  // Sincronização em background
   loadDBFromCloud().then(success => {
     if (success) {
       console.log("Banco de dados sincronizado via Supabase.");
       if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
       if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
     } else if (GOOGLE_SHEETS_URL) {
-      // Se falhar no Supabase, tenta o Sheets como fallback
       fetch(GOOGLE_SHEETS_URL + '?action=carregar')
         .then(r => r.json())
         .then(remoteDb => {
