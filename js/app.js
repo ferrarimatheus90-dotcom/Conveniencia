@@ -876,20 +876,21 @@ function finishLogin(user, rem){
   });
 }
 
-function doLogout(){
+async function doLogout(){
   auditLog('LOGOUT','Saiu do sistema');
+  await sb.auth.signOut();
   currentUser=null;
   if(orderCheckInterval) clearInterval(orderCheckInterval);
   if(window.bgSyncInterval) clearInterval(window.bgSyncInterval);
   if(window.autoSyncInterval) clearInterval(window.autoSyncInterval);
   if(window.dailySyncTimeout) clearTimeout(window.dailySyncTimeout);
   window.dailySyncTimeout = null;
+  localStorage.removeItem('convpro_savedLogin'); // limpar chave legada
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('app').style.display='none';
-  const savedLogin = localStorage.getItem('convpro_savedLogin');
-  if(!savedLogin) {
+  document.getElementById('loginPass').value='';
+  if(!localStorage.getItem('convpro_savedUser')) {
     document.getElementById('loginUser').value='';
-    document.getElementById('loginPass').value='';
   }
 }
 
