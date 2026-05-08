@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Skill(update-config)",
-      "Skill(update-config:*)"
+      "Skill(update-config:*)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' -X POST https://ryizqbbjxjrxcortkshv.supabase.co/auth/v1/signup -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXpxYmJqeGpyeGNvcnRrc2h2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNDk3MzQsImV4cCI6MjA5MTkyNTczNH0.nhb-bPiPN_q29-LfdrnjtYLq4k38hFwuuYu6bjuDCUM' -H 'Content-Type: application/json' -d '{\"email\":\"ferrarimatheus90+dev@gmail.com\",\"password\":\"dev@2026\",\"data\":{\"role\":\"dev\",\"name\":\"Desenvolvedor\"}}')",
+      "Bash(curl -s -X POST https://ryizqbbjxjrxcortkshv.supabase.co/auth/v1/signup -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXpxYmJqeGpyeGNvcnRrc2h2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNDk3MzQsImV4cCI6MjA5MTkyNTczNH0.nhb-bPiPN_q29-LfdrnjtYLq4k38hFwuuYu6bjuDCUM' -H 'Content-Type: application/json' -d '{\"email\":\"ferrarimatheus90+dev@gmail.com\",\"password\":\"dev@2026\",\"data\":{\"role\":\"dev\",\"name\":\"Desenvolvedor\"}}')",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s 'https://ryizqbbjxjrxcortkshv.supabase.co/auth/v1/admin/users?page=1&per_page=50' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXpxYmJqeGNvcnRrc2h2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjM0OTczNCwiZXhwIjoyMDkxOTI1NzM0fQ.waPgZQeOawzDbPSSz3RipTWycfTn1BXZWr_RLKcM6mc' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXpxYmJqeGNvcnRrc2h2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjM0OTczNCwiZXhwIjoyMDkxOTI1NzM0fQ.waPgZQeOawzDbPSSz3RipTWycfTn1BXZWr_RLKcM6mc')",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git log *)",
+      "Bash(git fetch *)"
     ]
   },
   "hooks": {

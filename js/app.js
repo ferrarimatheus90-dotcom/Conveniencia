@@ -224,7 +224,14 @@ async function saveDB(){
     }
   }
 
-  syncToGoogleSheets();
+  if (syncPending) {
+    updateCloudIcon('error', "Sincronização pendente...");
+  }
+
+  // Só dispara o sync do Google Sheets se não houver um em andamento
+  if (!window._isSyncingGS) {
+    syncToGoogleSheets();
+  }
 }
 
 function updateCloudIcon(status, errorMsg = '') {
@@ -421,13 +428,28 @@ function repairDB() {
 
 
 async function syncToGoogleSheets() {
-  if (!GOOGLE_SHEETS_URL) return;
+  if (!GOOGLE_SHEETS_URL || window._isSyncingGS) return;
+  
+  window._isSyncingGS = true;
   try {
-    await _gsPost({ action: 'sincronizar', db: DB });
-    DB.config.lastSyncDiario = new Date().toISOString();
-    saveDB();
+    const res = await _gsPost({ action: 'sincronizar', db: DB });
+    const data = await res.json();
+    
+    if (data && data.success) {
+      console.log("✅ Sincronizado com Google Sheets!");
+      DB.config.lastSyncDiario = new Date().toISOString();
+      localStorage.setItem('convpro_db', JSON.stringify(DB));
+      await sb.from('config_app').upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
+    } else {
+      console.warn("⚠️ Google Sheets recusou a sincronização:", data?.error || 'Erro desconhecido');
+      if (data?.error === 'Não autorizado.') {
+        showToast('Erro: Token do Google Sheets inválido ou não configurado!', 'error');
+      }
+    }
   } catch(e) {
-    console.error("Erro no background ao sincronizar com Google Sheets", e);
+    console.error("❌ Erro ao sincronizar com Google Sheets:", e);
+  } finally {
+    window._isSyncingGS = false;
   }
 }
 
@@ -889,31 +911,65 @@ function finishLogin(user, rem){
   auditLog('LOGIN','Acesso ao sistema');
   
   // Sincronização ao fechar o navegador
-  window.addEventListener('beforeunload', () => {
+  window.addEventListener('beforeunload', (e) => {
+    // Tenta um último sync rápido via Beacon (Sheets)
     if (GOOGLE_SHEETS_URL) {
-      const _beaconBody = GOOGLE_SHEETS_TOKEN
-        ? JSON.stringify({ action: 'sincronizar', token: GOOGLE_SHEETS_TOKEN, db: DB })
-        : JSON.stringify({ action: 'sincronizar', db: DB });
+      const _beaconBody = JSON.stringify({ 
+        action: 'sincronizar', 
+        token: GOOGLE_SHEETS_TOKEN, 
+        db: DB 
+      });
       navigator.sendBeacon(GOOGLE_SHEETS_URL, _beaconBody);
     }
+
+    // Mostra o aviso nativo do navegador para o usuário não fechar antes do tempo
+    e.preventDefault();
+    e.returnValue = 'Realizando backup de segurança no Google Drive. Aguarde alguns segundos antes de confirmar a saída.';
+    return e.returnValue;
   });
 }
 
 async function doLogout(){
-  auditLog('LOGOUT','Saiu do sistema');
+  if (!confirm('Deseja realmente sair? O sistema realizará um backup final no Google Drive antes de encerrar.')) return;
+
+  // Bloqueio visual
+  const appEl = document.getElementById('app');
+  const loader = document.createElement('div');
+  loader.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;font-family:sans-serif;";
+  loader.innerHTML = `
+    <div class="spinner" style="width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid var(--primary);border-radius:50%;animation:spin 1s linear infinite;margin-bottom:15px;"></div>
+    <div style="font-size:18px;font-weight:bold;">Finalizando Sessão...</div>
+    <div style="font-size:13px;margin-top:10px;opacity:0.8;">Salvando backup no Google Drive, não feche a aba.</div>
+    <style>@keyframes spin {0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}</style>
+  `;
+  document.body.appendChild(loader);
+
+  try {
+    // Tenta o backup no Drive antes de sair
+    await salvarBackupGoogleDrive();
+    auditLog('LOGOUT','Saiu do sistema com backup finalizado');
+  } catch(e) {
+    console.error("Erro no backup de saída:", e);
+  }
+
   await sb.auth.signOut();
-  currentUser=null;
+  currentUser = null;
   if(orderCheckInterval) clearInterval(orderCheckInterval);
   if(window.bgSyncInterval) clearInterval(window.bgSyncInterval);
   if(window.autoSyncInterval) clearInterval(window.autoSyncInterval);
   if(window.dailySyncTimeout) clearTimeout(window.dailySyncTimeout);
   window.dailySyncTimeout = null;
-  localStorage.removeItem('convpro_savedLogin'); // limpar chave legada
-  document.getElementById('loginScreen').style.display='flex';
-  document.getElementById('app').style.display='none';
-  document.getElementById('loginPass').value='';
+  
+  localStorage.removeItem('convpro_savedLogin');
+  
+  // Remove o loader e volta pra tela de login
+  document.body.removeChild(loader);
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('loginPass').value = '';
+  
   if(!localStorage.getItem('convpro_savedUser')) {
-    document.getElementById('loginUser').value='';
+    document.getElementById('loginUser').value = '';
   }
 }
 
@@ -958,10 +1014,15 @@ async function executarSyncDiario() {
     }
 
     // ✅ Salva backup JSON no Google Drive após o sync
-    await salvarBackupGoogleDrive();
+    const backupRes = await salvarBackupGoogleDrive();
 
-    DB.config.lastSyncDiario = new Date().toISOString();
-    saveDB();
+    if (backupRes) {
+      DB.config.lastSyncDiario = new Date().toISOString();
+      saveDB();
+      showToast('✅ Sincronização diária e backup concluídos!', 'success');
+    } else {
+      showToast('⚠️ Sync feito, mas falha ao salvar arquivo no Drive.', 'warning');
+    }
   } catch(e) {
     console.error('[Sync Diário] Erro:', e);
     showToast('⚠️ Falha na sincronização das 03:00. Verifique a conexão.', 'error');
@@ -973,7 +1034,7 @@ async function executarSyncDiario() {
 }
 
 async function salvarBackupGoogleDrive() {
-  if (!GOOGLE_SHEETS_URL) return;
+  if (!GOOGLE_SHEETS_URL) return false;
   try {
     const dataHoje = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
     const nomeArquivo = `backup_conveniencia_${dataHoje}.json`;
@@ -983,13 +1044,14 @@ async function salvarBackupGoogleDrive() {
     if (data.success) {
       console.log(`[Backup Drive] ✅ Backup salvo: ${data.nomeArquivo}`);
       DB.config.lastBackupSync = new Date().toISOString();
-      saveDB();
-      showToast(`☁️ Backup salvo no Drive: ${nomeArquivo}`, 'success');
+      return true;
     } else {
       console.warn('[Backup Drive] ⚠️ Erro ao salvar:', data.error);
+      return false;
     }
   } catch(e) {
     console.error('[Backup Drive] Falha:', e);
+    return false;
   }
 }
 
@@ -1321,6 +1383,20 @@ function renderDashboard(){
   <div class="section-header">
     <div class="topbar-title">🗓️ Resumo do Mês (${new Date().toLocaleString('pt-BR',{month:'long'})})</div>
     <div class="topbar-badge">${mesAtual}</div>
+  </div>
+
+  <div class="card mb-4" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 10px 15px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div style="font-size:12px; color:var(--text3);">
+        <strong>Integridade dos Dados:</strong> 
+        <span class="badge ${DB.vendas.length > 0 ? 'green' : 'red'}">${DB.vendas.length} vendas</span> registradas. 
+        Última venda: <span class="text-amber" style="font-weight:bold;">${DB.vendas.length > 0 ? (DB.vendas[0].data + ' ' + (DB.vendas[0].hora || '')) : 'Nenhuma'}</span>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="navigate('configuracoes')" style="font-size:10px; padding: 4px 8px;">⚙️ Ajustar Sync</button>
+        <button class="btn btn-ghost btn-sm" onclick="syncToGoogleSheets()" style="font-size:10px; padding: 4px 8px;">🔄 Sincronizar Agora</button>
+      </div>
+    </div>
   </div>
 
   <div class="grid-4 mb-4">
@@ -3613,11 +3689,11 @@ function renderBackup(){
 
       <div class="card" style="border-color: #22c55e; background:var(--surface2); grid-column: 1 / -1;">
         <h3 style="font-family:'Syne',sans-serif;font-size:16px;margin-bottom:6px">☁️ Backup Diário no Google Drive</h3>
-        <p class="text-muted mb-4" style="font-size:13px">Todo dia às <strong>03:00</strong> o sistema salva automaticamente um arquivo <code>backup_conveniencia_DD-MM-AAAA.json</code> na pasta <strong>"Backups Conveniencia"</strong> do seu Google Drive. Você pode também forçar um backup agora para testar.</p>
+        <p class="text-muted mb-4" style="font-size:13px;">O sistema realiza backups automáticos às 03:00. Você pode forçar um backup manual no Drive abaixo.</p>
         <div class="flex" style="gap:10px; align-items:center; flex-wrap:wrap">
-          <button class="btn btn-primary" style="background:#22c55e; border-color:#22c55e" id="btnBackupDrive" onclick="testarBackupDrive()">☁️ Salvar Backup Agora no Drive</button>
+          <button class="btn btn-primary" style="background:#22c55e; border-color:#22c55e" id="btnBackupDrive" onclick="executarSyncDiarioManual()">☁️ Salvar Backup Agora no Drive</button>
           <span id="backupDriveStatus" style="font-size:13px; color:var(--text2)">
-            ${DB.config?.lastBackupSync ? `✅ Último backup automático: ${new Date(DB.config.lastBackupSync).toLocaleString('pt-BR')}` : '⚠️ Nenhum backup automático registrado recentemente.'}
+            ${DB.config?.lastBackupSync ? `✅ Último backup: ${new Date(DB.config.lastBackupSync).toLocaleString('pt-BR')}` : '⚠️ Nenhum backup registrado.'}
           </span>
         </div>
       </div>
@@ -3859,8 +3935,8 @@ function imprimirCupom(venda) {
   const nomeLoja = "CONVENIÊNCIA OLIVEIRA";
   // O usuário pode mudar aqui depois
   const cnpj = "63.530.569/0001-89"; 
-  const endereco = "Rua Cícero Faustino da Silva 407, Lagoa Seca PB"; 
-  const telefone = "-";
+  const endereco = "Rua Cícero Faustino da Silva 407, Lagoa Seca - PB"; 
+  const telefone = "(83) 99691-2439";
 
   const dataParts = venda.data.split('-');
   const dataFormatada = `${dataParts[2]}/${dataParts[1]}/${dataParts[0]}`;
@@ -3947,9 +4023,16 @@ function imprimirCupom(venda) {
         </table>
         ${venda.obs ? `<div class="divider"></div><div><strong>Obs:</strong> ${venda.obs}</div>` : ''}
         <div class="divider"></div>
+        <div class="center" style="margin: 10px 0;">
+          <div class="bold" style="font-size: 11px; margin-bottom: 5px;">PAGAMENTO VIA PIX</div>
+          <img src="img/qr_pagamento.png" style="width: 40mm; height: 40mm; display: block; margin: 0 auto;">
+          <div style="font-size: 9px; margin-top: 5px;">Escaneie o QR Code acima para pagar</div>
+        </div>
+        <div class="divider"></div>
         <div class="footer">
           <div>Volte sempre!</div>
-          <div style="font-size: 9px; margin-top: 5px;">Desenvolvido por Conveniência Oliveira</div>
+          <div style="font-size: 9px; margin-top: 5px;">Desenvolvido por AI CONNECT Soluções</div>
+          <div style="font-size: 8px;">WhatsApp: (15) 99656-6722</div>
         </div>
         <script>window.onload = function() { window.print(); }</script>
       </body>
@@ -4052,3 +4135,23 @@ document.getElementById('loginUser').addEventListener('keydown',e=>{if(e.key==='
     console.error("❌ Erro na migração:", e);
   }
 })();
+window.executarSyncDiarioManual = async function() {
+  const btn = document.getElementById('btnBackupDrive');
+  if(!btn) return;
+  const oldText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Processando Backup...';
+  
+  showToast('Iniciando backup manual no Google Drive...', 'info');
+  const success = await salvarBackupGoogleDrive();
+  
+  if (success) {
+    showToast('Backup concluído com sucesso no Google Drive!', 'success');
+  } else {
+    showToast('Falha ao gerar backup no Drive. Verifique se a URL e o Token estão corretos.', 'error');
+  }
+  
+  btn.disabled = false;
+  btn.innerHTML = oldText;
+  navigate('backup'); 
+};
