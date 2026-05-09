@@ -54,7 +54,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         role: meta.role || 'funcionario',
         name: meta.name || session.user.email
       };
-      finishLogin(user, false);
+      await finishLogin(user, false);
       return;
     }
   } catch(e) { console.warn("Erro ao verificar sessão:", e); }
@@ -805,7 +805,6 @@ function clearAllNotifications() {
   renderNotifPanel();
 }
 
-// ===================== AUTH =====================
 async function doLogin(){
   const u = document.getElementById('loginUser').value.trim();
   const p = document.getElementById('loginPass').value;
@@ -816,9 +815,8 @@ async function doLogin(){
 
   const { data, error } = await sb.auth.signInWithPassword({ email: u, password: p });
 
-  if(btn) { btn.innerHTML = 'Entrar'; btn.disabled = false; }
-
   if(error || !data.user) {
+    if(btn) { btn.innerHTML = 'Entrar'; btn.disabled = false; }
     document.getElementById('loginError').style.display='block';
     return;
   }
@@ -834,43 +832,43 @@ async function doLogin(){
     name: meta.name || data.user.email
   };
 
-  finishLogin(user, rem);
+  await finishLogin(user, rem);
+}
 
-  // Sincronização em background
-  loadDBFromCloud().then(updatedFromSupabase => {
+async function finishLogin(user, rem){
+  const btn = document.querySelector('.login-btn');
+  if(btn) { btn.innerHTML = 'Sincronizando...'; btn.disabled = true; }
+  
+  // 1. Puxar do Supabase imediatamente antes de mostrar a interface
+  try {
+    const updatedFromSupabase = await loadDBFromCloud();
     if (updatedFromSupabase) {
-      console.log("Banco de dados sincronizado via Supabase.");
-      if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
-      if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
+      console.log("✨ Banco de dados inicializado a partir do Supabase.");
     }
-    
-    // Sempre verifica o Google Sheets também!
-    // O cliente pode estar com uma versão antiga em cache que só salva no Google Sheets.
+
+    // O Sheets roda em background para pegar qualquer descompasso que porventura só tenha salvo nele
     if (GOOGLE_SHEETS_URL) {
       _gsGet('carregar')
         .then(r => r.json())
         .then(remoteDb => {
             const hasUpdates = mergeRemoteDB(remoteDb);
             if (hasUpdates) {
-                console.log("✨ Banco de dados mesclado via Google Sheets.");
+                console.log("✨ Banco de dados mesclado via Google Sheets (fallback).");
                 localStorage.setItem('convpro_db', JSON.stringify(DB));
-                
-                // Tenta forçar o update para o Supabase agora que pegou do Sheets
                 if (typeof sb !== 'undefined') {
                    sb.from('config_app').upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
                 }
-
                 if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
                 if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
+                if (currentPage === 'vendas') renderProdutos_venda();
             }
         })
         .catch(e => console.warn("Erro no fallback do Google Sheets:", e));
     }
-  });
-}
+  } catch (e) {
+    console.error("Falha no sync inicial do Supabase:", e);
+  }
 
-function finishLogin(user, rem){
-  const btn = document.querySelector('.login-btn');
   if(btn) { btn.innerHTML = 'Entrar'; btn.disabled = false; }
   
   if(rem) {
