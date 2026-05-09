@@ -373,8 +373,9 @@ async function loadDBFromCloud() {
       const updated = mergeRemoteDB(data.json_db);
       if (updated) {
         console.log("✨ Banco de dados atualizado com informações da nuvem.");
+        localStorage.setItem('convpro_db', JSON.stringify(DB));
       }
-      return true;
+      return updated;
     }
   } catch(e) {
     console.error("❌ Falha ao carregar do Supabase:", e);
@@ -836,21 +837,34 @@ async function doLogin(){
   finishLogin(user, rem);
 
   // Sincronização em background
-  loadDBFromCloud().then(success => {
-    if (success) {
+  loadDBFromCloud().then(updatedFromSupabase => {
+    if (updatedFromSupabase) {
       console.log("Banco de dados sincronizado via Supabase.");
       if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
       if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
-    } else if (GOOGLE_SHEETS_URL) {
+    }
+    
+    // Sempre verifica o Google Sheets também!
+    // O cliente pode estar com uma versão antiga em cache que só salva no Google Sheets.
+    if (GOOGLE_SHEETS_URL) {
       _gsGet('carregar')
         .then(r => r.json())
         .then(remoteDb => {
             const hasUpdates = mergeRemoteDB(remoteDb);
             if (hasUpdates) {
+                console.log("✨ Banco de dados mesclado via Google Sheets.");
+                localStorage.setItem('convpro_db', JSON.stringify(DB));
+                
+                // Tenta forçar o update para o Supabase agora que pegou do Sheets
+                if (typeof sb !== 'undefined') {
+                   sb.from('config_app').upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
+                }
+
                 if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
                 if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
             }
-        });
+        })
+        .catch(e => console.warn("Erro no fallback do Google Sheets:", e));
     }
   });
 }
