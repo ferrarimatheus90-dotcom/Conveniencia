@@ -47,11 +47,19 @@ window.addEventListener('DOMContentLoaded', async () => {
     const { data: { session } } = await sb.auth.getSession();
     if (session) {
       const meta = session.user.user_metadata || {};
+      
+      let calculatedRole = meta.role || 'funcionario';
+      if (session.user.email.includes('dev')) {
+        calculatedRole = 'dev';
+      } else if (session.user.email.includes('admin')) {
+        calculatedRole = 'admin';
+      }
+      
       const user = {
         id: session.user.id,
         username: session.user.email,
         email: session.user.email,
-        role: meta.role || 'funcionario',
+        role: calculatedRole,
         name: meta.name || session.user.email
       };
       await finishLogin(user, false);
@@ -274,6 +282,7 @@ function updateCloudIcon(status, errorMsg = '') {
 function mergeRemoteDB(remote) {
   if (!remote) return false;
   let hasUpdates = false;
+  let hasMissingInCloud = false;
   console.log("🛠️ Iniciando Smart Merge de dados remotos...");
 
   // 1. Produtos: Adiciona novos, mas mantém estoque local de existentes (local wins for stock)
@@ -286,6 +295,7 @@ function mergeRemoteDB(remote) {
         console.log(`[Smart Merge] Novo produto remoto adicionado: ${rp.nome}`);
       }
     });
+    if (DB.produtos.length > remote.produtos.length) hasMissingInCloud = true;
   }
 
   // 2. Mesas Abertas: União baseada em ID ou Nome
@@ -307,6 +317,7 @@ function mergeRemoteDB(remote) {
         // O próximo saveDB() vai mandar a versão local atualizada para a nuvem.
       }
     });
+    if (DB.mesas_abertas.length > remote.mesas_abertas.length) hasMissingInCloud = true;
   }
 
   // 3. Vendas e Histórico: Adiciona o que não existe localmente (baseado em data/hora ou ID)
@@ -321,6 +332,8 @@ function mergeRemoteDB(remote) {
           hasUpdates = true;
         }
       });
+      if (DB[key].length > remote[key].length) hasMissingInCloud = true;
+      
       // Ordena por data (opcional, mas bom para UI)
       DB[key].sort((a,b) => new Date(b.dt || b.data) - new Date(a.dt || a.data));
     }
@@ -354,6 +367,9 @@ function mergeRemoteDB(remote) {
   if (hasUpdates) {
     saveDB();
     repairDB();
+  } else if (hasMissingInCloud) {
+    console.log("⬆️ Banco local possui mais dados que a nuvem. Forçando upload...");
+    saveDB();
   }
   return hasUpdates;
 }
@@ -824,11 +840,20 @@ async function doLogin(){
   document.getElementById('loginError').style.display='none';
 
   const meta = data.user.user_metadata || {};
+  
+  // Garantir privilégios de admin para o desenvolvedor mesmo se faltar nos metadados ou se estiver incorreto
+  let calculatedRole = meta.role || 'funcionario';
+  if (data.user.email.includes('dev')) {
+    calculatedRole = 'dev';
+  } else if (data.user.email.includes('admin')) {
+    calculatedRole = 'admin';
+  }
+
   const user = {
     id: data.user.id,
     username: data.user.email,
     email: data.user.email,
-    role: meta.role || 'funcionario',
+    role: calculatedRole,
     name: meta.name || data.user.email
   };
 
@@ -3873,7 +3898,7 @@ function importarBackup(){
   
   const file = input.files[0];
   const reader = new FileReader();
-  reader.onload = function(e){
+  reader.onload = async function(e){
     try {
       const dbParsed = JSON.parse(e.target.result);
       if(!dbParsed || !dbParsed.produtos || !dbParsed.vendas){
@@ -3881,9 +3906,12 @@ function importarBackup(){
         return;
       }
       DB = dbParsed;
-      saveDB();
+      
+      showToast('Enviando backup para a nuvem. Aguarde...', 'info');
+      await saveDB(); // Await ensures Supabase upload completes
+      
       auditLog('BACKUP_IMPORT', 'Restauração de backup realizada');
-      showToast('Banco de dados restaurado. Atualizando...', 'success');
+      showToast('Banco de dados restaurado e sincronizado com a nuvem.', 'success');
       setTimeout(() => location.reload(), 1500);
     } catch(err) {
       showToast('Erro ao ler arquivo: ' + err.message, 'error');
