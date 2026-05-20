@@ -906,6 +906,39 @@ async function finishLogin(user, rem){
   document.getElementById('app').style.display='flex';
   document.getElementById('sidebarUser').textContent=user.name+' · '+user.role;
   buildSidebar();
+  
+  // Customização dinâmica para o usuário Desenvolvedor (DEV Mode)
+  const verDisp = document.getElementById('appVersionDisplay');
+  if (verDisp) {
+    if (user.role === 'dev') {
+      verDisp.style.cursor = 'pointer';
+      verDisp.style.opacity = '0.9';
+      verDisp.style.color = '#00E676';
+      verDisp.style.fontWeight = 'bold';
+      verDisp.title = 'Abrir Painel do Desenvolvedor';
+      verDisp.innerHTML = '🛡️ Dev Mode · v2026.05.19.v1';
+      
+      // Feedback visual ao passar o mouse (micro-animação premium)
+      const onEnter = () => { 
+        verDisp.style.opacity = '1'; 
+        verDisp.style.textShadow = '0 0 8px rgba(0, 230, 118, 0.6)'; 
+      };
+      const onLeave = () => { 
+        verDisp.style.opacity = '0.9'; 
+        verDisp.style.textShadow = 'none'; 
+      };
+      verDisp.addEventListener('mouseenter', onEnter);
+      verDisp.addEventListener('mouseleave', onLeave);
+    } else {
+      verDisp.style.cursor = '';
+      verDisp.style.opacity = '0.5';
+      verDisp.style.color = '';
+      verDisp.style.fontWeight = '';
+      verDisp.title = '';
+      verDisp.innerHTML = 'v2026.05.19.v1';
+    }
+  }
+  
   updateDate();
   setInterval(updateDate,60000);
   startPollingOrders();
@@ -4194,4 +4227,462 @@ window.executarSyncDiarioManual = async function() {
   btn.disabled = false;
   btn.innerHTML = oldText;
   navigate('backup'); 
+};
+
+// ===================== PAINEL DO DESENVOLVEDOR (DEV PANEL) =====================
+
+window.handleVersionClick = function() {
+  if (currentUser && currentUser.role === 'dev') {
+    abrirPainelDev();
+  } else {
+    showToast("Versão do Sistema: " + (document.getElementById('appVersionDisplay')?.textContent.replace('🛡️ Dev Mode · ', '') || 'v2026.05.19.v1'), "info");
+  }
+};
+
+window.abrirPainelDev = function() {
+  const contentHtml = `
+    <div class="modal-title" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:12px;">
+      <span style="display:flex; align-items:center; gap:8px;">🛡️ Painel do Desenvolvedor</span>
+      <span style="font-size:12px; background:rgba(0, 230, 118, 0.15); color:#00E676; padding:2px 8px; border-radius:12px; font-weight:bold; border:1px solid rgba(0, 230, 118, 0.3); font-family: 'Roboto Mono', monospace;">DEV MODE</span>
+    </div>
+    
+    <div class="dev-tabs" style="display:flex; border-bottom:1px solid var(--border); margin-bottom:15px; gap:8px;">
+      <button class="dev-tab-btn active" onclick="switchDevTab('changelog')" id="tabBtn-changelog" style="flex:1; padding:10px; background:none; border:none; border-bottom:2px solid var(--primary); color:white; font-weight:bold; cursor:pointer; font-size:13px; transition: all 0.2s;">📜 Changelog</button>
+      <button class="dev-tab-btn" onclick="switchDevTab('supabase')" id="tabBtn-supabase" style="flex:1; padding:10px; background:none; border:none; border-bottom:2px solid transparent; color:var(--text3); font-weight:bold; cursor:pointer; font-size:13px; transition: all 0.2s;">⚡ Supabase Status</button>
+    </div>
+    
+    <!-- SCOPED STYLING -->
+    <style>
+      .dev-tab-btn:hover {
+        color: white !important;
+        background: rgba(255,255,255,0.02);
+      }
+      .dev-tab-content {
+        display: none;
+        max-height: 400px;
+        overflow-y: auto;
+        padding-right: 5px;
+      }
+      .dev-tab-content.active {
+        display: block;
+      }
+      /* Custom scrollbar for premium look */
+      .dev-tab-content::-webkit-scrollbar {
+        width: 6px;
+      }
+      .dev-tab-content::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .dev-tab-content::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+      }
+      
+      /* Changelog Styles */
+      .changelog-timeline {
+        position: relative;
+        padding-left: 20px;
+        border-left: 2px solid var(--border);
+        margin: 10px 5px;
+      }
+      .changelog-item {
+        position: relative;
+        margin-bottom: 24px;
+      }
+      .changelog-item::before {
+        content: '';
+        position: absolute;
+        left: -27px;
+        top: 4px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--surface1);
+        border: 2px solid var(--primary);
+        transition: all 0.3s;
+      }
+      .changelog-item.current::before {
+        background: #00E676;
+        border-color: #00E676;
+        box-shadow: 0 0 8px #00E676;
+      }
+      .changelog-version {
+        font-family: 'Outfit', sans-serif;
+        font-weight: 700;
+        font-size: 15px;
+        color: white;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .changelog-date {
+        font-size: 11px;
+        color: var(--text3);
+        font-family: 'Roboto Mono', monospace;
+      }
+      .changelog-tags {
+        margin: 6px 0;
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+      .changelog-tag {
+        font-size: 9px;
+        font-weight: bold;
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+      }
+      .changelog-tag.feat { background: rgba(0, 176, 255, 0.15); color: #00B0FF; border: 1px solid rgba(0, 176, 255, 0.3); }
+      .changelog-tag.fix { background: rgba(255, 23, 68, 0.15); color: #FF1744; border: 1px solid rgba(255, 23, 68, 0.3); }
+      .changelog-tag.perf { background: rgba(0, 230, 118, 0.15); color: #00E676; border: 1px solid rgba(0, 230, 118, 0.3); }
+      .changelog-tag.security { background: rgba(213, 0, 249, 0.15); color: #D500F9; border: 1px solid rgba(213, 0, 249, 0.3); }
+      
+      .changelog-changes {
+        margin-top: 6px;
+        padding-left: 15px;
+        list-style-type: disc;
+      }
+      .changelog-changes li {
+        font-size: 12.5px;
+        color: var(--text2);
+        margin-bottom: 4px;
+        line-height: 1.4;
+      }
+      
+      /* Supabase Status Styles */
+      .status-card-inner {
+        background: rgba(255,255,255,0.02);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      .status-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12.5px;
+        padding: 6px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.03);
+      }
+      .status-row:last-child {
+        border-bottom: none;
+      }
+      .status-label {
+        color: var(--text3);
+      }
+      .status-value {
+        color: white;
+        font-weight: 500;
+      }
+      
+      /* Progress bar */
+      .progress-container {
+        width: 100%;
+        height: 6px;
+        background: rgba(255,255,255,0.05);
+        border-radius: 3px;
+        margin: 8px 0;
+        overflow: hidden;
+      }
+      .progress-bar {
+        height: 100%;
+        background: var(--primary);
+        border-radius: 3px;
+        transition: width 0.5s ease;
+      }
+    </style>
+    
+    <!-- TAB 1: CHANGELOG -->
+    <div class="dev-tab-content active" id="devTab-changelog">
+      <div class="changelog-timeline">
+        
+        <div class="changelog-item current">
+          <div class="changelog-version">v2026.05.19.v1 <span class="badge green" style="background:#00E676; color:black; font-weight:bold;">Atual</span></div>
+          <div class="changelog-date">19 de Maio de 2026 · 21:00</div>
+          <div class="changelog-tags">
+            <span class="changelog-tag feat">feature</span>
+            <span class="changelog-tag perf">performance</span>
+          </div>
+          <ul class="changelog-changes">
+            <li>Desenvolvimento do <strong>Painel do Desenvolvedor (DEV Panel)</strong> acessível ao clicar na versão.</li>
+            <li>Adicionado o <strong>Diagnóstico de Status & Uso do Supabase</strong> com cálculo real de peso do payload JSON em tempo real.</li>
+            <li>Medição de Latência da API do Supabase com ping de precisão.</li>
+            <li>Melhoria visual da versão indicando "🛡️ Dev Mode" para o desenvolvedor com efeitos hover interativos.</li>
+          </ul>
+        </div>
+        
+        <div class="changelog-item">
+          <div class="changelog-version">v2026.05.11.v1</div>
+          <div class="changelog-date">11 de Maio de 2026 · 03:43</div>
+          <div class="changelog-tags">
+            <span class="changelog-tag feat">feature</span>
+            <span class="changelog-tag security">segurança</span>
+          </div>
+          <ul class="changelog-changes">
+            <li>Configuração e integração de backup automático e controle de versão no repositório <strong>GitHub</strong>.</li>
+            <li>Rastreamento de arquivos e fluxo de implantação de segurança contínua (CI/CD).</li>
+          </ul>
+        </div>
+        
+        <div class="changelog-item">
+          <div class="changelog-version">v2026.05.09.v1</div>
+          <div class="changelog-date">09 de Maio de 2026 · 17:51</div>
+          <div class="changelog-tags">
+            <span class="changelog-tag feat">feature</span>
+            <span class="changelog-tag fix">bugfix</span>
+          </div>
+          <ul class="changelog-changes">
+            <li>Integração com <strong>Supabase</strong> para sincronização de dados centralizada e tempo real entre múltiplos dispositivos.</li>
+            <li>Resolução e ajuste de permissões e roles para o login de desenvolvedor (e-mail dev).</li>
+            <li>Ajuste agressivo contra cache de navegador (<strong>cache-busting</strong> por injeção dinâmica de timestamp no CSS e JS).</li>
+          </ul>
+        </div>
+        
+        <div class="changelog-item">
+          <div class="changelog-version">v2026.05.08.v1</div>
+          <div class="changelog-date">08 de Maio de 2026 · 20:59</div>
+          <div class="changelog-tags">
+            <span class="changelog-tag fix">bugfix</span>
+            <span class="changelog-tag perf">performance</span>
+          </div>
+          <ul class="changelog-changes">
+            <li>Desenvolvimento da fusão de dados inteligente (<strong>Smart Merge</strong>) resolvendo disparidades de rede offline/online.</li>
+            <li>Persistência unificada de <code>localStorage</code> com merged remoto (Supabase & Google Sheets).</li>
+            <li>Correção de conflitos de sincronia em tempo real das mesas abertas.</li>
+          </ul>
+        </div>
+        
+        <div class="changelog-item">
+          <div class="changelog-version">v2026.05.04.v1</div>
+          <div class="changelog-date">04 de Maio de 2026 · 16:17</div>
+          <div class="changelog-tags">
+            <span class="changelog-tag feat">feature</span>
+            <span class="changelog-tag security">segurança</span>
+          </div>
+          <ul class="changelog-changes">
+            <li>Implementação de <strong>backup obrigatório na saída</strong> do sistema.</li>
+            <li>Intercepção do encerramento de abas do navegador (<code>beforeunload</code>) com salvamento em segundo plano no Google Drive.</li>
+          </ul>
+        </div>
+        
+        <div class="changelog-item">
+          <div class="changelog-version">v2026.04.28.v1</div>
+          <div class="changelog-date">28 de Abril de 2026 · 18:42</div>
+          <div class="changelog-tags">
+            <span class="changelog-tag feat">feature</span>
+          </div>
+          <ul class="changelog-changes">
+            <li>Estruturação e conexão com o <strong>Cardápio Digital Público</strong> integrado para as mesas do estabelecimento.</li>
+            <li>Geração automática de QR Codes para link dinâmico de mesas.</li>
+            <li>Ajuste do backend Apps Script do Google e chaves de segurança.</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+    
+    <!-- TAB 2: SUPABASE STATUS -->
+    <div class="dev-tab-content" id="devTab-supabase">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <span style="font-size:12px; color:var(--text3); font-weight:600;">DIAGNÓSTICO EM TEMPO REAL</span>
+        <button class="btn btn-ghost btn-sm" id="btnRecarregarSupabase" onclick="recalcularStatusSupabase()" style="font-size:11px; padding:3px 8px; border:1px solid var(--border)">🔄 Atualizar Status</button>
+      </div>
+      
+      <div class="status-card-inner">
+        <div class="status-row">
+          <span class="status-label">Status da Conexão</span>
+          <span class="status-value" id="supaStatus-conexao">⏳ Checando...</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Latência (Ping da API)</span>
+          <span class="status-value mono" id="supaStatus-ping">⏳ -- ms</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">URL da Instância</span>
+          <span class="status-value mono" style="font-size:10px; max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" id="supaStatus-url">--</span>
+        </div>
+      </div>
+      
+      <div class="status-card-inner">
+        <div style="font-weight:600; font-size:13px; margin-bottom:6px; display:flex; justify-content:space-between; color:white;">
+          <span>Armazenamento de Dados</span>
+          <span id="supaStatus-pesoTxt" class="mono text-amber">-- KB</span>
+        </div>
+        <div class="progress-container">
+          <div class="progress-bar" id="supaStatus-progresso" style="width: 0%"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text3);">
+          <span>JSON Local: <span id="supaStatus-tamanhoJson" class="mono">-- KB</span></span>
+          <span>Limite Free Tier: 500 MB</span>
+        </div>
+      </div>
+      
+      <div class="status-card-inner">
+        <div style="font-weight:600; font-size:13px; margin-bottom:8px; color:white;">Estatísticas de Registros Locais (Backup Nuvem)</div>
+        <div class="status-row">
+          <span class="status-label">Produtos Cadastrados</span>
+          <span class="status-value mono" id="supaStatus-regProd">--</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Vendas Totais</span>
+          <span class="status-value mono" id="supaStatus-regVend">--</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Compras Realizadas</span>
+          <span class="status-value mono" id="supaStatus-regComp">--</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Logs de Auditoria</span>
+          <span class="status-value mono" id="supaStatus-regAud">--</span>
+        </div>
+      </div>
+      
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="visualizarPayloadCompleto()" style="flex:1; font-size:11px; justify-content:center; display:flex; align-items:center; gap:4px; border:1px solid var(--border)"><span class="icon">🔍</span> Ver Payload JSON</button>
+        <button class="btn btn-ghost btn-sm" onclick="testarEscreveSupabase()" style="flex:1; font-size:11px; justify-content:center; display:flex; align-items:center; gap:4px; border:1px solid var(--border)"><span class="icon">✏️</span> Testar Escrita</button>
+      </div>
+    </div>
+    
+    <div class="modal-footer" style="border-top:1px solid var(--border); padding-top:12px; margin-top:15px; display:flex; justify-content:flex-end;">
+      <button class="btn btn-primary" onclick="closeModal()">Fechar Painel</button>
+    </div>
+  `;
+  
+  openModal(contentHtml);
+  
+  // Tab switching in DOM context
+  window.switchDevTab = function(tabName) {
+    document.querySelectorAll('.dev-tab-btn').forEach(btn => {
+      btn.classList.remove('active');
+      btn.style.borderBottomColor = 'transparent';
+      btn.style.color = 'var(--text3)';
+    });
+    
+    const activeBtn = document.getElementById('tabBtn-' + tabName);
+    if (activeBtn) {
+      activeBtn.classList.add('active');
+      activeBtn.style.borderBottomColor = 'var(--primary)';
+      activeBtn.style.color = 'white';
+    }
+    
+    document.querySelectorAll('.dev-tab-content').forEach(content => {
+      content.classList.remove('active');
+    });
+    
+    const activeContent = document.getElementById('devTab-' + tabName);
+    if (activeContent) {
+      activeContent.classList.add('active');
+    }
+    
+    if (tabName === 'supabase') {
+      recalcularStatusSupabase();
+    }
+  };
+};
+
+window.recalcularStatusSupabase = async function() {
+  const conexaoEl = document.getElementById('supaStatus-conexao');
+  const pingEl = document.getElementById('supaStatus-ping');
+  const urlEl = document.getElementById('supaStatus-url');
+  const pesoTxtEl = document.getElementById('supaStatus-pesoTxt');
+  const progressoEl = document.getElementById('supaStatus-progresso');
+  const tamanhoJsonEl = document.getElementById('supaStatus-tamanhoJson');
+  
+  const regProdEl = document.getElementById('supaStatus-regProd');
+  const regVendEl = document.getElementById('supaStatus-regVend');
+  const regCompEl = document.getElementById('supaStatus-regComp');
+  const regAudEl = document.getElementById('supaStatus-regAud');
+  
+  if (conexaoEl) conexaoEl.innerHTML = '⏳ Medindo Conexão...';
+  if (pingEl) pingEl.innerHTML = '⏳ -- ms';
+  
+  // Set instance URL
+  if (urlEl && typeof SUPABASE_URL !== 'undefined') {
+    urlEl.textContent = SUPABASE_URL;
+    urlEl.title = SUPABASE_URL;
+  }
+  
+  // 1. Calculate counts
+  if (regProdEl) regProdEl.textContent = (DB.produtos?.length || 0) + ' itens';
+  if (regVendEl) regVendEl.textContent = (DB.vendas?.length || 0) + ' registros';
+  if (regCompEl) regCompEl.textContent = (DB.compras?.length || 0) + ' compras';
+  if (regAudEl) regAudEl.textContent = (DB.auditoria?.length || 0) + ' logs';
+  
+  // 2. Calculate payload size
+  const jsonStr = JSON.stringify(DB);
+  const sizeBytes = new Blob([jsonStr]).size;
+  const sizeKB = sizeBytes / 1024;
+  const limitBytes = 500 * 1024 * 1024; // 500 MB limit
+  const percentage = (sizeBytes / limitBytes) * 100;
+  
+  if (pesoTxtEl) pesoTxtEl.textContent = `${sizeKB.toFixed(2)} KB`;
+  if (tamanhoJsonEl) tamanhoJsonEl.textContent = `${sizeKB.toFixed(2)} KB`;
+  if (progressoEl) {
+    progressoEl.style.width = Math.max(0.5, percentage).toFixed(4) + '%';
+    if (percentage > 90) progressoEl.style.backgroundColor = '#ff5252';
+    else if (percentage > 70) progressoEl.style.backgroundColor = '#ffc107';
+    else progressoEl.style.backgroundColor = '#00E676';
+  }
+  
+  // 3. Test ping / connection
+  if (typeof sb !== 'undefined') {
+    try {
+      const start = performance.now();
+      const { data, error } = await sb
+        .from('config_app')
+        .select('updated_at')
+        .eq('id', 1)
+        .single();
+      const end = performance.now();
+      const latency = (end - start).toFixed(0);
+      
+      if (error) throw error;
+      
+      if (conexaoEl) conexaoEl.innerHTML = '<span style="color:#00E676; font-weight:bold;">🟢 Saudável (Online)</span>';
+      if (pingEl) pingEl.textContent = latency + ' ms';
+      
+    } catch(e) {
+      console.error("Erro no teste de ping do Supabase:", e);
+      if (conexaoEl) conexaoEl.innerHTML = '<span style="color:#ff5252; font-weight:bold;">🔴 Sem Conexão / Erro</span>';
+      if (pingEl) pingEl.textContent = 'Indisponível';
+    }
+  } else {
+    if (conexaoEl) conexaoEl.innerHTML = '<span style="color:#ff5252; font-weight:bold;">🔴 Supabase não Inicializado</span>';
+    if (pingEl) pingEl.textContent = '-- ms';
+  }
+};
+
+window.visualizarPayloadCompleto = function() {
+  const rawJson = JSON.stringify(DB, null, 2);
+  const jsonModalHtml = `
+    <div class="modal-title">🔍 Visualizador do Payload JSON (Backup Nuvem)</div>
+    <p style="font-size:12.5px; color:var(--text3); margin-bottom:10px;">
+      Este é o estado atual de todo o banco de dados que é enviado e sincronizado no Supabase em uma única coluna JSON.
+    </p>
+    <textarea readonly style="width:100%; height:250px; background:rgba(0,0,0,0.2); color:#00E676; border:1px solid var(--border); border-radius:6px; font-family:'Roboto Mono', monospace; font-size:11px; padding:10px; resize:none; outline:none; white-space:pre; overflow:auto;">${escapeHTML(rawJson)}</textarea>
+    <div class="modal-footer" style="margin-top:12px; display:flex; justify-content:space-between; align-items:center;">
+      <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(\`${rawJson.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`); showToast('Copiado para a área de transferência!', 'success')" style="border:1px solid var(--border)">📋 Copiar JSON</button>
+      <button class="btn btn-primary" onclick="abrirPainelDev()">Voltar</button>
+    </div>
+  `;
+  openModal(jsonModalHtml);
+};
+
+window.testarEscreveSupabase = async function() {
+  showToast('Iniciando teste de gravação no Supabase...', 'info');
+  try {
+    const start = performance.now();
+    const { error } = await sb
+      .from('config_app')
+      .upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
+    const end = performance.now();
+    
+    if (error) throw error;
+    
+    showToast(`Gravação concluída em ${(end - start).toFixed(0)}ms!`, 'success');
+    recalcularStatusSupabase();
+  } catch(e) {
+    showToast('Falha na gravação: ' + (e.message || 'Erro desconhecido'), 'error');
+  }
 };
