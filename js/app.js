@@ -53,6 +53,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         calculatedRole = 'dev';
       } else if (session.user.email.includes('admin')) {
         calculatedRole = 'admin';
+      } else if (!['admin', 'dev', 'funcionario'].includes(calculatedRole)) {
+        calculatedRole = 'funcionario';
       }
       
       const user = {
@@ -539,11 +541,13 @@ async function checkPedidosDigitais() {
             if(ex) { ex.qtd += ni.qtd; } else { mesa.itens.push(ni); }
           });
           mesa.dtAtualizacao = ped.dtAtualizacao;
+          mesa.canal = 'Delivery';
           if(mesa.obs) mesa.obs += ' | ' + obsStr; else mesa.obs = obsStr;
         } else {
           DB.mesas_abertas.push({
             cliente: ped.cliente,
             obs: obsStr,
+            canal: 'Delivery',
             itens: ped.itens,
             dtAtualizacao: ped.dtAtualizacao
           });
@@ -847,6 +851,8 @@ async function doLogin(){
     calculatedRole = 'dev';
   } else if (data.user.email.includes('admin')) {
     calculatedRole = 'admin';
+  } else if (!['admin', 'dev', 'funcionario'].includes(calculatedRole)) {
+    calculatedRole = 'funcionario';
   }
 
   const user = {
@@ -904,7 +910,7 @@ async function finishLogin(user, rem){
   currentUser=user;
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').style.display='flex';
-  document.getElementById('sidebarUser').textContent=user.name+' · '+user.role;
+  document.getElementById('sidebarUser').textContent=user.name+' · '+roleLabel(user.role);
   buildSidebar();
   
   // Customização dinâmica para o usuário Desenvolvedor (DEV Mode)
@@ -1177,6 +1183,7 @@ const NAV_DEV = [
   {id:'produtos',icon:'🏷️',label:'Produtos'},
   {id:'usuarios',icon:'👥',label:'Usuários'},
   {section:'Relatórios'},
+  {id:'financeiro',icon:'💰',label:'Financeiro'},
   {id:'relatorios',icon:'📈',label:'Relatórios'},
   {id:'auditoria',icon:'🔍',label:'Auditoria'},
   {section:'Sistema'},
@@ -1196,6 +1203,7 @@ const NAV_ADMIN = [
   {section:'Cadastros'},
   {id:'produtos',icon:'🏷️',label:'Produtos'},
   {section:'Relatórios'},
+  {id:'financeiro',icon:'💰',label:'Financeiro'},
   {id:'relatorios',icon:'📈',label:'Relatórios'},
   {id:'auditoria',icon:'🔍',label:'Auditoria'},
 ];
@@ -1236,10 +1244,10 @@ const PAGE_TITLES={
   dashboard:'Dashboard',vendas:'Registrar Venda',producao:'Produção',
   consumo:'Consumo Interno',estoque:'Estoque',compras:'Compras',
   produtos:'Produtos',usuarios:'Usuários',relatorios:'Relatórios',
-  auditoria:'Auditoria',caixa:'Caixa do Dia',backup:'Backup de Dados'
+  financeiro:'Financeiro',auditoria:'Auditoria',caixa:'Caixa do Dia',backup:'Backup de Dados'
 };
 function navigate(page){
-  if(currentUser.role==='funcionario'&&page!=='vendas')page='vendas';
+  if(!['admin','dev'].includes(currentUser.role)&&page!=='vendas')page='vendas';
   if(currentUser.role==='admin'&&(page==='usuarios'||page==='backup'))page='dashboard';
   currentPage=page;
   setActiveNav(page);
@@ -1255,6 +1263,7 @@ function navigate(page){
     case 'compras': c.innerHTML=renderCompras();break;
     case 'produtos': c.innerHTML=renderProdutos();break;
     case 'usuarios': c.innerHTML=renderUsuarios();break;
+    case 'financeiro': c.innerHTML=renderFinanceiro();break;
     case 'relatorios': c.innerHTML=renderRelatorios();break;
     case 'auditoria': c.innerHTML=renderAuditoria();break;
     case 'caixa': c.innerHTML=renderCaixa();break;
@@ -1331,6 +1340,11 @@ function escapeHTML(str){
   if(!str)return '';
   return String(str).replace(/[&<>'"]/g, t => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[t]));
 }
+function roleLabel(role){
+  if(role === 'dev') return 'Dev';
+  if(role === 'admin') return 'Admin';
+  return 'Vendedor';
+}
 
 function showToast(msg,type='success'){
   const t=document.createElement('div');
@@ -1370,10 +1384,7 @@ function renderDashboard(){
   const totalHoje = vendasHoje.reduce((s, v) => s + (v.total || 0), 0);
   const custoHoje = vendasHoje.reduce((s, v) => s + (v.custo || 0), 0);
   const consumoHoje = (DB.consumos || []).filter(c => normData(c.data) === hoje);
-  const custoConsumoHoje = consumoHoje.reduce((s, c) => {
-    const p = DB.produtos.find(x => x.id === c.produtoId);
-    return s + (p && p.custo ? p.custo * c.qtd : 0);
-  }, 0);
+  const custoConsumoHoje = consumoHoje.reduce((s, c) => s + getConsumoCusto(c), 0);
   const lucroHoje = totalHoje - custoHoje - custoConsumoHoje;
   const abertos = (DB.mesas_abertas || []).length;
   const pedidosHoje = vendasHoje.length + abertos;
@@ -1383,10 +1394,7 @@ function renderDashboard(){
   const totalVendasMes = vendasMes.reduce((s, v) => s + v.total, 0);
   const custoVendasMes = vendasMes.reduce((s, v) => s + v.custo, 0);
   const consumoMes = (DB.consumos || []).filter(c => normData(c.data).slice(0, 7) === mesAtual);
-  const custoConsumoMes = consumoMes.reduce((s, c) => {
-    const p = DB.produtos.find(x => x.id === c.produtoId);
-    return s + (p && p.custo ? p.custo * c.qtd : 0);
-  }, 0);
+  const custoConsumoMes = consumoMes.reduce((s, c) => s + getConsumoCusto(c), 0);
   const comprasMes = (DB.compras || []).filter(c => normData(c.data).slice(0, 7) === mesAtual);
   const totalComprasMes = comprasMes.reduce((s, c) => s + c.total, 0);
   const lucroMes = totalVendasMes - custoVendasMes - custoConsumoMes;
@@ -1612,9 +1620,13 @@ function renderVendas(){
       <div class="card mb-3">
         <div class="flex items-center justify-between mb-3">
           <div class="card-title" style="margin:0">🛒 Carrinho</div>
-          <button class="btn btn-ghost btn-sm" style="font-size:12px; border:1px solid var(--border); position:relative" onclick="abrirModalMesas()">
+          <button class="btn btn-ghost btn-sm" style="font-size:12px; border:1px solid var(--border); position:relative" onclick="abrirModalMesas('', 'mesas')">
             <span class="icon">📝</span> Mesas Abertas
             ${DB.mesas_abertas?.length ? `<span style="position:absolute; top:-8px; right:-8px; background:var(--red); color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:bold; border:2px solid var(--surface1)">${DB.mesas_abertas.length}</span>` : ''}
+          </button>
+          <button class="btn btn-ghost btn-sm" style="font-size:12px; border:1px solid var(--border); margin-left:6px; position:relative" onclick="abrirModalMesas('', 'delivery')">
+            <span class="icon">🚚</span> Delivery
+            ${DB.mesas_abertas?.filter(m => (m.canal || 'Mesa') === 'Delivery').length ? `<span style="position:absolute; top:-8px; right:-8px; background:var(--blue); color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:bold; border:2px solid var(--surface1)">${DB.mesas_abertas.filter(m => (m.canal || 'Mesa') === 'Delivery').length}</span>` : ''}
           </button>
         </div>
         <div id="cartItems"><div class="empty-state" style="padding:16px"><div class="icon">🛒</div>Adicione produtos</div></div>
@@ -1992,6 +2004,8 @@ function salvarMesaAberta(){
   const idx = DB.mesas_abertas.findIndex(x => x.cliente.toLowerCase() === cliente.toLowerCase());
   
   const obs = document.getElementById('vendaObs')?.value || '';
+  const tipoVenda = document.getElementById('vendaTipo')?.value || 'Mesa';
+  const canal = tipoVenda === 'Delivery' ? 'Delivery' : 'Mesa';
   const cartClone = JSON.parse(JSON.stringify(cart));
   
   let mesaFinal = null;
@@ -2004,6 +2018,7 @@ function salvarMesaAberta(){
        mesaExistente.itens = [...mesaExistente.itens, ...cartClone];
        mesaExistente.dtAtualizacao = getLocalISODate();
        mesaExistente.obs = (mesaExistente.obs ? mesaExistente.obs + ' | ' : '') + obs;
+       mesaExistente.canal = canal;
        mesaFinal = mesaExistente;
        auditLog('MESA_UPDATE', `Adicionados itens à mesa: ${cliente}`);
     } else {
@@ -2013,6 +2028,7 @@ function salvarMesaAberta(){
        mesaExistente.itens = cartClone;
        mesaExistente.dtAtualizacao = getLocalISODate();
        mesaExistente.obs = obs;
+       mesaExistente.canal = canal;
        mesaFinal = mesaExistente;
        auditLog('MESA_OVERWRITE', `Itens da mesa ${cliente} foram substituídos`);
     }
@@ -2022,6 +2038,7 @@ function salvarMesaAberta(){
       id: Date.now(), // ID único
       cliente: cliente,
       obs: obs,
+      canal: canal,
       itens: cartClone,
       dtCriacao: getLocalISODate(),
       dtAtualizacao: getLocalISODate()
@@ -2051,7 +2068,7 @@ function salvarMesaAberta(){
   }
 }
 
-function abrirModalMesas(filtro = ''){
+function abrirModalMesas(filtro = '', secao = 'todos'){
   DB.mesas_abertas = DB.mesas_abertas || [];
   
   let mesas = [...DB.mesas_abertas];
@@ -2064,6 +2081,10 @@ function abrirModalMesas(filtro = ''){
   mesas.sort((a,b) => new Date(b.dtAtualizacao) - new Date(a.dtAtualizacao));
 
   const totalAbertas = DB.mesas_abertas.length;
+  const totalDelivery = DB.mesas_abertas.filter(m => (m.canal || 'Mesa') === 'Delivery').length;
+  const totalMesas = totalAbertas - totalDelivery;
+  const listaMesas = secao === 'delivery' ? [] : mesas.filter(m => (m.canal || 'Mesa') !== 'Delivery');
+  const listaDelivery = secao === 'mesas' ? [] : mesas.filter(m => (m.canal || 'Mesa') === 'Delivery');
 
   const html = `
     <style>
@@ -2139,14 +2160,14 @@ function abrirModalMesas(filtro = ''){
        </div>
        <div style="text-align:right">
          <div style="background:var(--accent); color:#000; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:13px; display:inline-block">
-           ${totalAbertas} Mesas
+          ${totalAbertas} Abertas
          </div>
        </div>
     </div>
 
     <div class="search-wrap" style="position:relative; margin-bottom:15px;">
       <input type="text" id="inputBuscaMesa" class="form-control" placeholder="🔍 Buscar por mesa ou nome..." value="${filtro}" 
-             oninput="window._timerBuscaMesa && clearTimeout(window._timerBuscaMesa); window._timerBuscaMesa = setTimeout(() => abrirModalMesas(this.value), 300)"
+             oninput="window._timerBuscaMesa && clearTimeout(window._timerBuscaMesa); window._timerBuscaMesa = setTimeout(() => abrirModalMesas(this.value, '${secao}'), 300)"
              style="background:var(--surface2); border-color:var(--border); padding-left:35px">
       <script>setTimeout(()=> { 
         const inp = document.getElementById('inputBuscaMesa'); 
@@ -2166,11 +2187,12 @@ function abrirModalMesas(filtro = ''){
         <p class="text-muted" style="font-size:13px; margin-top:5px">
           ${filtro ? 'Tente outro nome ou limpe a busca.' : 'Use o botão "Deixar em Aberto" no carrinho para salvar uma comanda.'}
         </p>
-        ${filtro ? `<button class="btn btn-ghost btn-sm mt-3" onclick="abrirModalMesas('')">Limpar Busca</button>` : ''}
+        ${filtro ? `<button class="btn btn-ghost btn-sm mt-3" onclick="abrirModalMesas('', '${secao}')">Limpar Busca</button>` : ''}
       </div>
     ` : `
+      <div class="card-title" style="font-size:13px; margin-bottom:6px;">Mesas em Aberto (${totalMesas})</div>
       <div class="mesa-grid">
-        ${mesas.map(m => {
+        ${listaMesas.map(m => {
           const totalValue = m.itens.reduce((s,i) => s + (i.preco * i.qtd), 0);
           const totalQtd = m.itens.reduce((s,i) => s + i.qtd, 0);
           const diffMs = (new Date() - new Date(m.dtAtualizacao));
@@ -2209,6 +2231,48 @@ function abrirModalMesas(filtro = ''){
             </div>
           `;
         }).join('')}
+      </div>
+      <div class="card-title" style="font-size:13px; margin:14px 0 6px;">Delivery (${totalDelivery})</div>
+      <div class="mesa-grid" style="max-height:38vh;">
+        ${listaDelivery.map(m => {
+          const totalValue = m.itens.reduce((s,i) => s + (i.preco * i.qtd), 0);
+          const totalQtd = m.itens.reduce((s,i) => s + i.qtd, 0);
+          const diffMs = (new Date() - new Date(m.dtAtualizacao));
+          const diffMin = Math.floor(diffMs / 60000);
+          
+          let timeMsg = diffMin < 1 ? 'Agora' : `HÃ¡ ${diffMin} min`;
+          if(diffMin >= 60) timeMsg = `HÃ¡ ${Math.floor(diffMin/60)}h ${diffMin%60}m`;
+          
+          let alertClass = '';
+          if(diffMin > 60) alertClass = 'danger';
+          else if(diffMin > 30) alertClass = 'warning';
+
+          return `
+            <div class="mesa-card ${alertClass}" onclick="carregarMesaAbertaById(${m.id})">
+              
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px">
+                <span class="mesa-badge" style="background:${alertClass==='danger'?'rgba(239,68,68,0.2)':(alertClass==='warning'?'rgba(245,158,11,0.2)':'rgba(76,175,80,0.2)')}; color:${alertClass==='danger'?'var(--red)':(alertClass==='warning'?'var(--amber)':'#81c784')}">
+                  ${timeMsg}
+                </span>
+                <button class="btn-delete-mesa" onclick="event.stopPropagation(); excluirMesaAbertaById(${m.id})">Ã—</button>
+              </div>
+
+              <div class="mesa-name" style="font-weight:bold; font-size:17px; line-height:1.2; color:var(--text1); margin-bottom:12px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
+                ${m.cliente}
+              </div>
+              
+              <div style="display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid rgba(255,255,255,0.05); padding-top:10px">
+                <div style="font-size:11px; color:var(--text2)">
+                  <span style="display:block">ðŸ“¦ ${totalQtd} itens</span>
+                </div>
+                <div class="mono" style="font-weight:bold; font-size:15px; color:${totalValue > 100 ? 'var(--amber)' : 'var(--text1)'}">
+                  ${fmt(totalValue)}
+                </div>
+              </div>
+
+            </div>
+          `;
+        }).join('') || '<div class="text-muted" style="grid-column:1/-1; padding:12px;">Nenhum pedido de delivery em aberto.</div>'}
       </div>
     `}
 
@@ -2338,6 +2402,8 @@ function renderProducao(){
 function modalProducao(producaoId = null, qtdExistente = 0, produtoId = null){
   const prods=DB.produtos.filter(p=>p.tipo==='produzido'&&p.status==='ativo');
   const isEdit = !!producaoId;
+  const registro = isEdit ? DB.producoes.find(x => x.id == producaoId) : null;
+  const dataRegistro = registro?.data || today();
   
   openModal(`
     <div class="modal-title">${isEdit ? '📝 Editar Produção' : '🔥 Registrar Produção'}</div>
@@ -2352,7 +2418,8 @@ function modalProducao(producaoId = null, qtdExistente = 0, produtoId = null){
       <input type="number" class="form-control" id="mpQtd" value="${isEdit ? qtdExistente : 10}" min="1">
     </div>
     <div class="form-group">
-      <label class="form-label">Observação</label>
+      <label class="form-label">Data da Produção e Observação</label>
+      <input type="date" class="form-control" id="mpData" value="${dataRegistro}" max="${today()}" style="margin-bottom:8px">
       <input class="form-control" id="mpObs" placeholder="opcional">
     </div>
     <div class="modal-footer">
@@ -2368,9 +2435,11 @@ window.modalProducaoEdicao = function(produtoId, qtd, producaoId = null) {
 function salvarProducao(producaoId = '', qtdAntiga = 0, produtoId = null){
   const pid = producaoId ? produtoId : parseInt(document.getElementById('mpProd').value);
   const qtd = parseInt(document.getElementById('mpQtd').value)||0;
+  const data = document.getElementById('mpData').value || today();
   const obs = escapeHTML(document.getElementById('mpObs').value);
   
   if(!qtd){showToast('Informe a quantidade','error');return;}
+  if(data > today()){showToast('A data da produção não pode ser futura','error');return;}
   
   const p = DB.produtos.find(x=>x.id===pid);
   if(!p) return;
@@ -2385,7 +2454,7 @@ function salvarProducao(producaoId = '', qtdAntiga = 0, produtoId = null){
     }
   }
 
-  const prod = {id: producaoId || uid('producao'), produtoId: pid, produto: p.nome, qtd, obs, data: today(), usuario: currentUser.name, dt: getLocalISODate()};
+  const prod = {id: producaoId || uid('producao'), produtoId: pid, produto: p.nome, qtd, obs, data, usuario: currentUser.name, dt: getLocalISODate()};
   DB.producoes.push(prod);
   p.estoque += qtd;
   
@@ -2540,8 +2609,9 @@ function modalConsumo(){
       </select>
     </div>
     <div class="form-group">
-      <label class="form-label">Observação</label>
+      <label class="form-label">Observação e Data</label>
       <input class="form-control" id="mcObs" placeholder="opcional">
+      <input type="date" class="form-control" id="mcData" value="${today()}" max="${today()}" style="margin-top:8px">
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -2553,13 +2623,17 @@ function salvarConsumo(){
   const pid=document.getElementById('mcProd').value;
   const qtd=parseFloat(document.getElementById('mcQtd').value)||0;
   const motivo=document.getElementById('mcMotivo').value;
+  const data=document.getElementById('mcData').value || today();
   const obs=escapeHTML(document.getElementById('mcObs').value);
   if(!qtd){showToast('Informe a quantidade','error');return;}
+  if(data > today()){showToast('A data do consumo não pode ser futura','error');return;}
   const p=DB.produtos.find(x=>x.id==pid);
+  const custoUnit = Number(p?.custo || 0);
+  const custoTotal = custoUnit * qtd;
   if(['Perda','Quebra','Vencimento'].includes(motivo)){
     if(!confirm(`Confirma o registro de ${qtd} un de ${p.nome} como ${motivo}? Isso baixa o estoque e representa prejuízo.`)) return;
   }
-  const c={id:uid('consumo'),produtoId:pid,produto:p.nome,qtd,motivo,obs,operacao:p.operacao,data:getEffectiveDay(),usuario:currentUser.name,dt:getLocalISODate()};
+  const c={id:uid('consumo'),produtoId:pid,produto:p.nome,qtd,motivo,obs,operacao:p.operacao,data,usuario:currentUser.name,dt:getLocalISODate(),custoUnit,custoTotal};
   DB.consumos.push(c);
   p.estoque=Math.max(0,p.estoque-qtd);
   saveDB();
@@ -2778,7 +2852,7 @@ function modalCompra(compraParaEditar = null){
       </div>
       <div class="form-group" style="margin:0">
         <label class="form-label">Data</label>
-        <input type="date" class="form-control" id="cpData" value="${isEdit ? compraParaEditar.data : today()}">
+        <input type="date" class="form-control" id="cpData" value="${isEdit ? compraParaEditar.data : today()}" max="${today()}">
       </div>
     </div>
     <div class="form-row cols-2 mb-3">
@@ -2856,6 +2930,7 @@ function salvarCompra(idEdicao = null){
   if(compraItens.length===0){showToast('Adicione pelo menos um item','error');return;}
   const fornec=escapeHTML(document.getElementById('cpFornec').value||'Sem fornecedor');
   const data=document.getElementById('cpData').value||today();
+  if(data > today()){showToast('A data da compra não pode ser futura','error');return;}
   const op=document.getElementById('cpOp').value;
   const pag=document.getElementById('cpPag').value;
   const obs=escapeHTML(document.getElementById('cpObs').value);
@@ -3107,7 +3182,7 @@ function renderUsuarios(){
           <tr>
             <td><strong>${escapeHTML(u.name || '')}</strong></td>
             <td class="mono">${escapeHTML(u.email || u.username || '')}</td>
-            <td><span class="badge ${u.role==='admin'||u.role==='dev'?'purple':'blue'}">${escapeHTML(u.role || '')}</span></td>
+            <td><span class="badge ${u.role==='admin'||u.role==='dev'?'purple':'blue'}">${escapeHTML(roleLabel(u.role))}</span></td>
             <td class="text-muted" style="font-size:12px">${u.role==='admin'||u.role==='dev'?'Acesso completo':'Somente vendas'}</td>
           </tr>
         </tbody>
@@ -3165,6 +3240,7 @@ function renderCaixa(){
   // Calcular Consumo do Dia selecionado
   const consumosHoje = (DB.consumos || []).filter(v => normData(v.data) === targetDate);
   const custoConsumo = consumosHoje.reduce((s, c) => {
+    if (typeof c.custoTotal === 'number') return s + c.custoTotal;
     const p = DB.produtos.find(x => x.id === c.produtoId);
     return s + (p && p.custo ? p.custo * c.qtd : 0);
   }, 0);
@@ -3224,6 +3300,7 @@ function renderCaixa(){
     return cDate >= semanaStartStr && cDate <= semanaEndStr;
   });
   const custoConsumoSemana = consumosSemana.reduce((s, c) => {
+    if (typeof c.custoTotal === 'number') return s + c.custoTotal;
     const p = DB.produtos.find(x => x.id === c.produtoId);
     return s + (p && p.custo ? p.custo * c.qtd : 0);
   }, 0);
@@ -3452,6 +3529,7 @@ function imprimirResumoSemana() {
     return cDate >= semanaStartStr && cDate <= semanaEndStr;
   });
   const custoConsumoSemana = consumosSemana.reduce((s,c) => {
+    if (typeof c.custoTotal === 'number') return s + c.custoTotal;
     const p = DB.produtos.find(x => x.id === c.produtoId);
     return s + (p && p.custo ? p.custo * c.qtd : 0);
   }, 0);
@@ -3468,7 +3546,14 @@ function imprimirResumoSemana() {
     const vendasDia = vendasSemana.filter(v => normData(v.data) === dStr);
     const totalDia = vendasDia.reduce((s,v)=>s+v.total,0);
     const custoDia = vendasDia.reduce((s,v)=>s+v.itens.reduce((si,i)=>si+(i.custo||0)*i.qtd,0),0);
-    const lucroDia = totalDia - custoDia;
+    const custoConsumoDia = (DB.consumos || [])
+      .filter(c => normData(c.data) === dStr)
+      .reduce((s, c) => {
+        if (typeof c.custoTotal === 'number') return s + c.custoTotal;
+        const p = DB.produtos.find(x => x.id === c.produtoId);
+        return s + (p && p.custo ? p.custo * c.qtd : 0);
+      }, 0);
+    const lucroDia = totalDia - custoDia - custoConsumoDia;
     return `<tr>
       <td><strong>${nome}</strong> ${d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}</td>
       <td class="num">${vendasDia.length}</td>
@@ -3583,6 +3668,197 @@ window._toggleNightMode = function() {
   document.getElementById('content').innerHTML = renderCaixa();
 };
 
+// ===================== FINANCEIRO =====================
+let currentFinanceMonth = null;
+let currentFinancePayment = 'todos';
+
+function getConsumoCusto(c) {
+  if (typeof c.custoTotal === 'number') return c.custoTotal;
+  const p = DB.produtos.find(x => x.id == c.produtoId);
+  return (p && p.custo ? p.custo * c.qtd : 0);
+}
+
+function getMonthLabel(mes) {
+  if (!mes) return '';
+  const parts = mes.split('-').map(Number);
+  return new Date(parts[0], parts[1] - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+}
+
+function getFinanceMonths() {
+  const set = new Set();
+  (DB.vendas || []).forEach(v => { const d = normData(v.data || v.dt); if (d) set.add(d.slice(0, 7)); });
+  (DB.compras || []).forEach(c => { const d = normData(c.data || c.dt); if (d) set.add(d.slice(0, 7)); });
+  (DB.consumos || []).forEach(c => { const d = normData(c.data || c.dt); if (d) set.add(d.slice(0, 7)); });
+  if (!set.size) set.add(today().slice(0, 7));
+  return [...set].sort().reverse();
+}
+
+function getFinanceMonthSummary(mes) {
+  const vendas = (DB.vendas || []).filter(v => normData(v.data || v.dt).slice(0, 7) === mes);
+  const compras = (DB.compras || []).filter(c => normData(c.data || c.dt).slice(0, 7) === mes);
+  const consumos = (DB.consumos || []).filter(c => normData(c.data || c.dt).slice(0, 7) === mes);
+  const receita = vendas.reduce((s, v) => s + Number(v.total || 0), 0);
+  const custoVendas = vendas.reduce((s, v) => s + Number(v.custo || (v.itens || []).reduce((a, i) => a + Number(i.custo || 0) * Number(i.qtd || 0), 0)), 0);
+  const comprasEstoque = compras.reduce((s, c) => s + Number(c.total || 0), 0);
+  const consumoInterno = consumos.reduce((s, c) => s + getConsumoCusto(c), 0);
+  const lucroOperacional = receita - custoVendas - consumoInterno;
+  const saldoFinanceiro = receita - comprasEstoque - consumoInterno;
+  const ticketMedio = receita / (vendas.length || 1);
+  const diasMap = {};
+
+  vendas.forEach(v => {
+    const d = normData(v.data || v.dt);
+    if (!diasMap[d]) diasMap[d] = { data: d, vendas: 0, receita: 0, custo: 0 };
+    diasMap[d].vendas += 1;
+    diasMap[d].receita += Number(v.total || 0);
+    diasMap[d].custo += Number(v.custo || 0);
+  });
+  consumos.forEach(c => {
+    const d = normData(c.data || c.dt);
+    if (!diasMap[d]) diasMap[d] = { data: d, vendas: 0, receita: 0, custo: 0 };
+    diasMap[d].custo += getConsumoCusto(c);
+  });
+
+  const dias = Object.values(diasMap).map(d => ({ ...d, lucro: d.receita - d.custo })).sort((a, b) => b.receita - a.receita);
+  const pagamentos = {};
+  vendas.forEach(v => pagamentos[v.pagamento || 'Não informado'] = (pagamentos[v.pagamento || 'Não informado'] || 0) + Number(v.total || 0));
+  return { mes, vendas, compras, consumos, receita, custoVendas, comprasEstoque, consumoInterno, lucroOperacional, saldoFinanceiro, ticketMedio, dias, pagamentos };
+}
+
+window.mudarMesFinanceiro = function() {
+  currentFinanceMonth = document.getElementById('financeMonth')?.value || today().slice(0, 7);
+  document.getElementById('content').innerHTML = renderFinanceiro();
+};
+
+window.mudarPagamentoFinanceiro = function() {
+  currentFinancePayment = document.getElementById('financePayment')?.value || 'todos';
+  document.getElementById('content').innerHTML = renderFinanceiro();
+};
+
+function renderFinanceiro() {
+  const meses = getFinanceMonths();
+  if (!currentFinanceMonth || !meses.includes(currentFinanceMonth)) currentFinanceMonth = meses[0];
+  const atual = getFinanceMonthSummary(currentFinanceMonth);
+  const pagamentosDisponiveis = ['Pix', 'Dinheiro', 'Crédito', 'Débito', 'Misto'];
+  if (currentFinancePayment !== 'todos' && !pagamentosDisponiveis.includes(currentFinancePayment)) currentFinancePayment = 'todos';
+  const normalizarPagamento = (pag) => {
+    const p = String(pag || 'Não informado').toLowerCase();
+    if (p.includes('pix')) return 'Pix';
+    if (p.includes('dinheiro')) return 'Dinheiro';
+    if (p.includes('crédito') || p.includes('credito')) return 'Crédito';
+    if (p.includes('débito') || p.includes('debito')) return 'Débito';
+    if (p.includes('misto')) return 'Misto';
+    return 'Outros';
+  };
+  const vendasFiltradas = currentFinancePayment === 'todos' ? atual.vendas : atual.vendas.filter(v => normalizarPagamento(v.pagamento) === currentFinancePayment);
+  const receitaFiltrada = vendasFiltradas.reduce((s, v) => s + Number(v.total || 0), 0);
+  const pagamentosFiltrados = currentFinancePayment === 'todos'
+    ? pagamentosDisponiveis.reduce((acc, p) => {
+        acc[p] = atual.vendas.filter(v => normalizarPagamento(v.pagamento) === p).reduce((s, v) => s + Number(v.total || 0), 0);
+        return acc;
+      }, {})
+    : { [currentFinancePayment]: receitaFiltrada };
+  const idxAtual = meses.indexOf(currentFinanceMonth);
+  const anterior = meses[idxAtual + 1] ? getFinanceMonthSummary(meses[idxAtual + 1]) : null;
+  const crescimento = anterior && anterior.receita ? ((atual.receita - anterior.receita) / anterior.receita) * 100 : null;
+  const margem = atual.receita ? (atual.lucroOperacional / atual.receita) * 100 : 0;
+  const maxReceitaMes = Math.max(1, ...meses.map(m => getFinanceMonthSummary(m).receita));
+  const lancamentos = [
+    ...vendasFiltradas.map(v => ({ data: normData(v.data || v.dt), tipo: 'Entrada', desc: v.cliente || v.tipo || 'Venda', pagamento: v.pagamento || 'Não informado', valor: Number(v.total || 0), badge: 'green' })),
+    ...atual.compras.map(c => ({ data: normData(c.data || c.dt), tipo: 'Compra', desc: c.fornecedor || 'Compra de estoque', valor: -Number(c.total || 0), badge: 'red' })),
+    ...atual.consumos.map(c => ({ data: normData(c.data || c.dt), tipo: 'Consumo', desc: c.produto || c.motivo || 'Consumo interno', valor: -getConsumoCusto(c), badge: 'amber' })),
+  ].sort((a, b) => b.data.localeCompare(a.data));
+
+  return `
+  <div class="section-header">
+    <div>
+      <div class="topbar-title">💰 Financeiro</div>
+      <div class="text-muted" style="font-size:12px">Visão mensal para Admin e Dev acompanharem entradas, gastos e lucro.</div>
+    </div>
+    <div class="flex gap-2 flex-wrap">
+      <select class="form-control" id="financeMonth" style="width:auto; min-width:180px" onchange="mudarMesFinanceiro()">
+        ${meses.map(m => `<option value="${m}" ${m === currentFinanceMonth ? 'selected' : ''}>${getMonthLabel(m)}</option>`).join('')}
+      </select>
+      <select class="form-control" id="financePayment" style="width:auto; min-width:170px" onchange="mudarPagamentoFinanceiro()">
+        <option value="todos" ${currentFinancePayment === 'todos' ? 'selected' : ''}>Todos os pagamentos</option>
+        ${pagamentosDisponiveis.map(p => `<option value="${escapeHTML(p)}" ${p === currentFinancePayment ? 'selected' : ''}>${escapeHTML(p)}</option>`).join('')}
+      </select>
+      <button class="btn btn-ghost" onclick="window.print()">Imprimir</button>
+    </div>
+  </div>
+
+  <div class="grid-4 mb-4">
+    <div class="stat-card blue"><div class="stat-label">Entradas</div><div class="stat-value text-blue">${fmt(receitaFiltrada)}</div><div class="stat-sub">${vendasFiltradas.length} vendas${currentFinancePayment === 'todos' ? ' no mês' : ' em ' + escapeHTML(currentFinancePayment)}</div></div>
+    <div class="stat-card red"><div class="stat-label">Gastos</div><div class="stat-value text-red">${fmt(atual.comprasEstoque + atual.consumoInterno)}</div><div class="stat-sub">Compras + consumo interno</div></div>
+    <div class="stat-card green"><div class="stat-label">Lucro Líquido</div><div class="stat-value text-green">${fmt(atual.lucroOperacional)}</div><div class="stat-sub">Margem: ${margem.toFixed(1)}%</div></div>
+    <div class="stat-card amber"><div class="stat-label">Crescimento</div><div class="stat-value text-amber">${crescimento === null ? '--' : crescimento.toFixed(1) + '%'}</div><div class="stat-sub">${anterior ? 'vs ' + getMonthLabel(anterior.mes) : 'Sem mês anterior'}</div></div>
+  </div>
+
+  <div class="grid-4 mb-4">
+    <div class="card"><div class="card-title">Custo das Vendas</div><div class="stat-value text-red">${fmt(atual.custoVendas)}</div><div class="text-muted" style="font-size:12px">Custo dos produtos vendidos</div></div>
+    <div class="card"><div class="card-title">Compras de Estoque</div><div class="stat-value text-red">${fmt(atual.comprasEstoque)}</div><div class="text-muted" style="font-size:12px">${atual.compras.length} compras registradas</div></div>
+    <div class="card"><div class="card-title">Consumo Interno</div><div class="stat-value text-amber">${fmt(atual.consumoInterno)}</div><div class="text-muted" style="font-size:12px">${atual.consumos.length} baixas internas</div></div>
+    <div class="card"><div class="card-title">Ticket Médio</div><div class="stat-value text-blue">${fmt(atual.ticketMedio)}</div><div class="text-muted" style="font-size:12px">Média por venda</div></div>
+  </div>
+
+  <div class="grid-2 mb-4">
+    <div class="card">
+      <div class="card-title">Comparativo Mensal</div>
+      ${meses.slice(0, 12).map(m => {
+        const s = getFinanceMonthSummary(m);
+        return `<div style="margin-bottom:10px">
+          <div class="flex justify-between mb-1"><span style="font-size:13px">${getMonthLabel(m)}</span><span class="mono text-amber">${fmt(s.receita)}</span></div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${Math.max(4, (s.receita / maxReceitaMes) * 100)}%;background:var(--blue)"></div></div>
+          <div class="text-muted" style="font-size:11px; margin-top:2px">Lucro ${fmt(s.lucroOperacional)} · ${s.vendas.length} vendas</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="card">
+      <div class="card-title">Melhores Dias de Venda</div>
+      ${atual.dias.slice(0, 7).map((d, i) => `
+        <div class="flex justify-between mb-2">
+          <span style="font-size:13px">${i + 1}. ${fmtDate(d.data)} <span class="text-muted">(${d.vendas} vendas)</span></span>
+          <span class="mono text-green">${fmt(d.receita)}</span>
+        </div>`).join('') || '<div class="text-muted">Sem vendas neste mês</div>'}
+    </div>
+  </div>
+
+  <div class="grid-2 mb-4">
+    <div class="card">
+      <div class="card-title">Entradas por Pagamento</div>
+      ${Object.entries(pagamentosFiltrados).sort((a,b)=>b[1]-a[1]).map(([k,v]) => `
+        <div class="flex justify-between mb-2"><span>${k}</span><span class="mono text-blue">${fmt(v)}</span></div>
+      `).join('') || '<div class="text-muted">Sem entradas</div>'}
+    </div>
+    <div class="card">
+      <div class="card-title">Resumo Contábil</div>
+      <div class="flex justify-between mb-2"><span>Receita bruta</span><span class="mono text-blue">${fmt(atual.receita)}</span></div>
+      <div class="flex justify-between mb-2"><span>Custo vendido</span><span class="mono text-red">-${fmt(atual.custoVendas)}</span></div>
+      <div class="flex justify-between mb-2"><span>Consumo interno</span><span class="mono text-amber">-${fmt(atual.consumoInterno)}</span></div>
+      <div class="divider"></div>
+      <div class="flex justify-between mb-2"><strong>Lucro líquido</strong><strong class="mono text-green">${fmt(atual.lucroOperacional)}</strong></div>
+      <div class="flex justify-between"><span class="text-muted">Fluxo de caixa simples</span><span class="mono">${fmt(atual.saldoFinanceiro)}</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Lançamentos do Mês</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead>
+        <tbody>${lancamentos.length ? lancamentos.map(l => `
+          <tr>
+            <td>${fmtDate(l.data)}</td>
+            <td><span class="badge ${l.badge}">${l.tipo}</span></td>
+            <td>${escapeHTML(l.desc)}</td>
+            <td class="mono ${l.valor >= 0 ? 'text-green' : 'text-red'}" style="text-align:right">${l.valor >= 0 ? fmt(l.valor) : '-' + fmt(Math.abs(l.valor))}</td>
+          </tr>`).join('') : '<tr><td colspan="4" style="text-align:center; padding:20px">Nenhum lançamento neste mês.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
 // ===================== RELATÓRIOS =====================
 function renderRelatorios(){
   const periodo=document.getElementById('relPeriodo')?.value||'hoje';
@@ -3605,10 +3881,7 @@ function renderRelatorios(){
     return true;
   });
 
-  const custoConsumo = consumosPeriodo.reduce((s, c) => {
-    const p = DB.produtos.find(x => x.id == c.produtoId);
-    return s + (p && p.custo ? p.custo * c.qtd : 0);
-  }, 0);
+  const custoConsumo = consumosPeriodo.reduce((s, c) => s + getConsumoCusto(c), 0);
 
   const totalVendas=vendas.reduce((s,v)=>s+v.total,0);
   const custoVendas=vendas.reduce((s,v)=>s+v.custo,0);
