@@ -281,6 +281,35 @@ function updateCloudIcon(status, errorMsg = '') {
   }
 }
 
+// ===================== IDENTIFICAÇÃO E COMPARAÇÃO DE MESAS =====================
+function normalizeMesaKey(name) {
+  if (!name) return '';
+  let str = name.toString().trim().toLowerCase();
+  // Remove acentos
+  str = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  
+  // Se for "Mesa 4 — João" ou "Mesa 04 - Pedro" ou "Mesa 4", extrai "mesa 4"
+  const matchMesa = str.match(/^mesa\s*0*(\d+)/i);
+  if (matchMesa) {
+    return 'mesa ' + parseInt(matchMesa[1], 10);
+  }
+  
+  const matchComanda = str.match(/^comanda\s*0*(\d+)/i);
+  if (matchComanda) {
+    return 'comanda ' + parseInt(matchComanda[1], 10);
+  }
+  
+  return str.replace(/\s+/g, ' ');
+}
+
+function matchMesa(nameA, nameB) {
+  if (!nameA || !nameB) return false;
+  const keyA = normalizeMesaKey(nameA);
+  const keyB = normalizeMesaKey(nameB);
+  if (keyA && keyB && keyA === keyB) return true;
+  return nameA.trim().toLowerCase() === nameB.trim().toLowerCase();
+}
+
 function mergeRemoteDB(remote) {
   if (!remote) return false;
   let hasUpdates = false;
@@ -300,23 +329,43 @@ function mergeRemoteDB(remote) {
     if (DB.produtos.length > remote.produtos.length) hasMissingInCloud = true;
   }
 
-  // 2. Mesas Abertas: União baseada em ID ou Nome
+  // 2. Mesas Abertas: União inteligente baseada em ID ou Nome da Mesa
   if (remote.mesas_abertas && Array.isArray(remote.mesas_abertas)) {
     remote.mesas_abertas.forEach(rm => {
-      // Busca mesa local por ID ou por Nome (se ID não existir ainda)
+      if (!rm || !rm.cliente) return;
+      // Busca mesa local por ID ou por Nome normalizado
       const localM = DB.mesas_abertas.find(lm => 
         (rm.id && lm.id === rm.id) || 
-        (lm.cliente.toLowerCase() === rm.cliente.toLowerCase())
+        matchMesa(lm.cliente, rm.cliente)
       );
       
       if (!localM) {
-        // Se a mesa remota não existe aqui, adiciona para garantir que nada se perca
+        // Se a mesa remota não existe aqui, adiciona garantindo ID
+        if (!rm.id) rm.id = Date.now() + Math.floor(Math.random() * 10000);
         DB.mesas_abertas.push(rm);
         hasUpdates = true;
         console.log(`[Smart Merge] Mesa aberta recuperada da nuvem: ${rm.cliente}`);
       } else {
-        // Se já existe local, preservamos a LOCAL (que é a que o usuário está mexendo agora)
-        // O próximo saveDB() vai mandar a versão local atualizada para a nuvem.
+        // Se já existe localmente, preserva o ID remoto se o local não tiver
+        if (rm.id && !localM.id) localM.id = rm.id;
+        
+        // Se a versão remota for mais recente, funde itens novos
+        if (rm.dtAtualizacao && localM.dtAtualizacao && new Date(rm.dtAtualizacao) > new Date(localM.dtAtualizacao)) {
+          if (rm.itens && Array.isArray(rm.itens)) {
+            rm.itens.forEach(ri => {
+              const ex = localM.itens.find(li => li.id === ri.id);
+              if (!ex) {
+                localM.itens.push(ri);
+                hasUpdates = true;
+              }
+            });
+          }
+          if (rm.obs && localM.obs !== rm.obs && !localM.obs.includes(rm.obs)) {
+            localM.obs = localM.obs ? `${localM.obs} | ${rm.obs}` : rm.obs;
+            hasUpdates = true;
+          }
+          localM.dtAtualizacao = rm.dtAtualizacao;
+        }
       }
     });
     if (DB.mesas_abertas.length > remote.mesas_abertas.length) hasMissingInCloud = true;
@@ -441,6 +490,57 @@ function repairDB() {
     }
   });
 
+  // Reparo e Desduplicação Automática de Mesas Abertas
+  if (DB.mesas_abertas && Array.isArray(DB.mesas_abertas)) {
+    const map = new Map();
+    const cleanList = [];
+    let deduplicatedCount = 0;
+
+    DB.mesas_abertas.forEach(m => {
+      if (!m || !m.cliente) return;
+      if (!m.id) m.id = Date.now() + Math.floor(Math.random() * 10000);
+      if (!m.dtAtualizacao) m.dtAtualizacao = getLocalISODate();
+      if (!m.itens || !Array.isArray(m.itens)) m.itens = [];
+
+      const key = normalizeMesaKey(m.cliente) || m.cliente.trim().toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, m);
+        cleanList.push(m);
+      } else {
+        // Encontrou duplicada! Funde itens e observações na mesa primária existente
+        const target = map.get(key);
+        deduplicatedCount++;
+        
+        // Funde itens da duplicada na primária
+        m.itens.forEach(ni => {
+          const ex = target.itens.find(ti => ti.id === ni.id);
+          if (ex) {
+            ex.qtd += (ni.qtd || 1);
+          } else {
+            target.itens.push({...ni});
+          }
+        });
+        
+        // Funde observações
+        if (m.obs && m.obs.trim() && (!target.obs || !target.obs.includes(m.obs.trim()))) {
+          target.obs = target.obs ? `${target.obs} | ${m.obs.trim()}` : m.obs.trim();
+        }
+
+        // Preserva a data de atualização mais recente
+        if (new Date(m.dtAtualizacao) > new Date(target.dtAtualizacao)) {
+          target.dtAtualizacao = m.dtAtualizacao;
+        }
+
+        console.warn(`[REPARO] Mesa duplicada "${m.cliente}" foi fundida em "${target.cliente}".`);
+      }
+    });
+
+    if (deduplicatedCount > 0) {
+      console.warn(`[REPARO] ${deduplicatedCount} mesa(s) duplicada(s) foram fundidas automaticamente.`);
+      DB.mesas_abertas = cleanList;
+    }
+  }
+
   // Garantir objeto de config
   if (!DB.config) DB.config = { lastSyncDiario: null, lastBackupSync: null };
 }
@@ -530,7 +630,7 @@ async function checkPedidosDigitais() {
 
       data.pedidos_novos.forEach(ped => {
         idsRecebidos.push(ped.id);
-        const idx = DB.mesas_abertas.findIndex(x => x.cliente.toLowerCase() === ped.cliente.toLowerCase());
+        const idx = DB.mesas_abertas.findIndex(x => matchMesa(x.cliente, ped.cliente));
         
         let obsStr = ped.obs ? `[APP] ${ped.obs}` : '[APP] Novo Pedido';
 
@@ -538,18 +638,23 @@ async function checkPedidosDigitais() {
           const mesa = DB.mesas_abertas[idx];
           ped.itens.forEach(ni => {
             const ex = mesa.itens.find(mi => mi.id === ni.id);
-            if(ex) { ex.qtd += ni.qtd; } else { mesa.itens.push(ni); }
+            if(ex) { ex.qtd += ni.qtd; } else { mesa.itens.push({...ni}); }
           });
-          mesa.dtAtualizacao = ped.dtAtualizacao;
-          mesa.canal = 'Delivery';
-          if(mesa.obs) mesa.obs += ' | ' + obsStr; else mesa.obs = obsStr;
+          mesa.dtAtualizacao = ped.dtAtualizacao || getLocalISODate();
+          if(mesa.obs) {
+            if(!mesa.obs.includes(obsStr)) mesa.obs += ' | ' + obsStr;
+          } else {
+            mesa.obs = obsStr;
+          }
         } else {
           DB.mesas_abertas.push({
+            id: Date.now() + Math.floor(Math.random() * 10000),
             cliente: ped.cliente,
             obs: obsStr,
             canal: 'Delivery',
             itens: ped.itens,
-            dtAtualizacao: ped.dtAtualizacao
+            dtCriacao: ped.dtAtualizacao || getLocalISODate(),
+            dtAtualizacao: ped.dtAtualizacao || getLocalISODate()
           });
         }
 
@@ -1965,12 +2070,11 @@ function finalizarVenda(OverridePag, mistoJson){
   });
   DB.vendas.push(venda);
   
-  // Se finalizou e havia mesa aberta com esse nome, tira das mesas abertas
+  // Se finalizou e havia mesa aberta com esse nome, tira das mesas abertas (usando matchMesa para remover todas as correspondências)
   const clienteFinalizado = cliente.trim();
   if(clienteFinalizado){
      DB.mesas_abertas = DB.mesas_abertas || [];
-     const idxA = DB.mesas_abertas.findIndex(x => x.cliente.toLowerCase() === clienteFinalizado.toLowerCase());
-     if(idxA >= 0) DB.mesas_abertas.splice(idxA, 1);
+     DB.mesas_abertas = DB.mesas_abertas.filter(x => !matchMesa(x.cliente, clienteFinalizado));
   }
 
   saveDB();
@@ -2000,8 +2104,8 @@ function salvarMesaAberta(){
 
   DB.mesas_abertas = DB.mesas_abertas || [];
   
-  // Busca por nome (case insensitive)
-  const idx = DB.mesas_abertas.findIndex(x => x.cliente.toLowerCase() === cliente.toLowerCase());
+  // Busca por nome usando correspondência flexível (normalizada)
+  const idx = DB.mesas_abertas.findIndex(x => matchMesa(x.cliente, cliente));
   
   const obs = document.getElementById('vendaObs')?.value || '';
   const tipoVenda = document.getElementById('vendaTipo')?.value || 'Mesa';
@@ -2069,6 +2173,7 @@ function salvarMesaAberta(){
 }
 
 function abrirModalMesas(filtro = '', secao = 'todos'){
+  repairDB(); // Identifica e unifica automaticamente qualquer mesa duplicada no banco
   DB.mesas_abertas = DB.mesas_abertas || [];
   
   let mesas = [...DB.mesas_abertas];

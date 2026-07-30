@@ -1,4 +1,4 @@
-﻿// ==========================================
+// ==========================================
 // BACKEND GOOGLE SHEETS - CONVENIÊNCIA OLIVEIRA
 // ==========================================
 
@@ -286,8 +286,8 @@ function configurarPlanilhaInicial() {
     },
     {
       nome: 'MesasAbertas',
-      headers: ['cliente', 'obs', 'itens', 'dtAtualizacao', '_itens_json'],
-      exemplo: ['Mesa 04', '', '1x Coca-Cola', new Date().toISOString(), '[{"nome":"Coca-Cola","qtd":1}]']
+      headers: ['id', 'cliente', 'obs', 'canal', 'itens', 'dtCriacao', 'dtAtualizacao', '_itens_json'],
+      exemplo: [1, 'Mesa 04', '', 'Mesa', '1x Coca-Cola', new Date().toISOString(), new Date().toISOString(), '[{"nome":"Coca-Cola","qtd":1}]']
     },
     {
       nome: 'Compras',
