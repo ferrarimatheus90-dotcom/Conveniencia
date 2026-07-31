@@ -288,18 +288,10 @@ function normalizeMesaKey(name) {
   // Remove acentos
   str = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   
-  // Se for "Mesa 4 — João" ou "Mesa 04 - Pedro" ou "Mesa 4", extrai "mesa 4"
-  const matchMesa = str.match(/^mesa\s*0*(\d+)/i);
-  if (matchMesa) {
-    return 'mesa ' + parseInt(matchMesa[1], 10);
-  }
+  // Normaliza "mesa 04" -> "mesa 4", "comanda 02" -> "comanda 2" sem descartar o restante da string (ex: "mesa 4 - fora")
+  str = str.replace(/\b(mesa|comanda)\s*0+(\d+)\b/gi, '$1 $2');
   
-  const matchComanda = str.match(/^comanda\s*0*(\d+)/i);
-  if (matchComanda) {
-    return 'comanda ' + parseInt(matchComanda[1], 10);
-  }
-  
-  return str.replace(/\s+/g, ' ');
+  return str.replace(/\s+/g, ' ').trim();
 }
 
 function matchMesa(nameA, nameB) {
@@ -316,7 +308,10 @@ function mergeRemoteDB(remote) {
   let hasMissingInCloud = false;
   console.log("🛠️ Iniciando Smart Merge de dados remotos...");
 
-  // 1. Produtos: Adiciona novos, mas mantém estoque local de existentes (local wins for stock)
+  // Timestamp do último sync com a nuvem registrado no cliente
+  const lastSyncTs = DB.config?.lastCloudSyncTimestamp ? new Date(DB.config.lastCloudSyncTimestamp).getTime() : 0;
+
+  // 1. Produtos: Adiciona novos, mas mantém estoque local de existentes
   if (remote.produtos && Array.isArray(remote.produtos)) {
     remote.produtos.forEach(rp => {
       const localP = DB.produtos.find(p => p.id === rp.id);
@@ -329,97 +324,114 @@ function mergeRemoteDB(remote) {
     if (DB.produtos.length > remote.produtos.length) hasMissingInCloud = true;
   }
 
-  // 2. Mesas Abertas: União inteligente baseada em ID ou Nome da Mesa
+  // 2. Mesas Abertas: Sincronização bidirecional precisa
   if (remote.mesas_abertas && Array.isArray(remote.mesas_abertas)) {
+    const remoteMesaIds = new Set(remote.mesas_abertas.map(m => String(m.id)));
+    const remoteMesaNames = new Set(remote.mesas_abertas.map(m => normalizeMesaKey(m.cliente)));
+
+    // A) Processa mesas remotas (adiciona ou atualiza local)
     remote.mesas_abertas.forEach(rm => {
       if (!rm || !rm.cliente) return;
-      // Busca mesa local por ID ou por Nome normalizado
+      
       const localM = DB.mesas_abertas.find(lm => 
-        (rm.id && lm.id === rm.id) || 
+        (rm.id && String(lm.id) === String(rm.id)) || 
         matchMesa(lm.cliente, rm.cliente)
       );
-      
+
       if (!localM) {
-        // Se a mesa remota não existe aqui, adiciona garantindo ID
+        // Mesa aberta na nuvem que ainda não temos localmente
         if (!rm.id) rm.id = Date.now() + Math.floor(Math.random() * 10000);
         DB.mesas_abertas.push(rm);
         hasUpdates = true;
         console.log(`[Smart Merge] Mesa aberta recuperada da nuvem: ${rm.cliente}`);
       } else {
-        // Se já existe localmente, preserva o ID remoto se o local não tiver
         if (rm.id && !localM.id) localM.id = rm.id;
         
-        // Se a versão remota for mais recente, funde itens novos
-        if (rm.dtAtualizacao && localM.dtAtualizacao && new Date(rm.dtAtualizacao) > new Date(localM.dtAtualizacao)) {
-          if (rm.itens && Array.isArray(rm.itens)) {
-            rm.itens.forEach(ri => {
-              const ex = localM.itens.find(li => li.id === ri.id);
-              if (!ex) {
-                localM.itens.push(ri);
-                hasUpdates = true;
-              }
-            });
-          }
-          if (rm.obs && localM.obs !== rm.obs && !localM.obs.includes(rm.obs)) {
-            localM.obs = localM.obs ? `${localM.obs} | ${rm.obs}` : rm.obs;
-            hasUpdates = true;
-          }
+        // Se a versão remota for mais recente, atualiza itens e obs
+        const dtRemote = rm.dtAtualizacao ? new Date(rm.dtAtualizacao).getTime() : 0;
+        const dtLocal = localM.dtAtualizacao ? new Date(localM.dtAtualizacao).getTime() : 0;
+
+        if (dtRemote > dtLocal) {
+          localM.itens = rm.itens || [];
+          localM.obs = rm.obs || '';
+          localM.canal = rm.canal || localM.canal || 'Mesa';
           localM.dtAtualizacao = rm.dtAtualizacao;
+          hasUpdates = true;
         }
       }
     });
-    if (DB.mesas_abertas.length > remote.mesas_abertas.length) hasMissingInCloud = true;
+
+    // B) Remove mesas locais que foram FECHADAS ou EXCLUÍDAS em outro dispositivo
+    const initialLen = DB.mesas_abertas.length;
+    DB.mesas_abertas = DB.mesas_abertas.filter(lm => {
+      if (!lm || !lm.cliente) return false;
+      const inRemoteById = lm.id && remoteMesaIds.has(String(lm.id));
+      const inRemoteByName = remoteMesaNames.has(normalizeMesaKey(lm.cliente));
+
+      if (inRemoteById || inRemoteByName) return true;
+
+      // Se a mesa NÃO está no remoto:
+      const lmCreatedTs = lm.dtCriacao ? new Date(lm.dtCriacao).getTime() : 0;
+      
+      // Se foi criada localmente DEPOIS do último sync com a nuvem, ela é nova (criada offline)
+      if (lastSyncTs > 0 && lmCreatedTs > lastSyncTs) {
+        hasMissingInCloud = true;
+        return true;
+      }
+
+      // Se já existia antes do último sync e agora sumiu da nuvem, foi FECHADA ou DELETADA!
+      console.warn(`[Smart Merge] Mesa "${lm.cliente}" foi fechada/excluída em outro terminal. Removendo localmente.`);
+      hasUpdates = true;
+      return false;
+    });
+
+    if (DB.mesas_abertas.length < initialLen) {
+      hasUpdates = true;
+    }
   }
 
-  // 3. Vendas e Histórico: Adiciona o que não existe localmente (baseado em data/hora ou ID)
+  // Registra timestamp do sync bem-sucedido
+  if (!DB.config) DB.config = {};
+  DB.config.lastCloudSyncTimestamp = new Date().toISOString();
+
+  // 3. Vendas e Histórico: Adiciona o que não existe localmente
   ['vendas', 'compras', 'producoes', 'consumos', 'auditoria'].forEach(key => {
     if (remote[key] && Array.isArray(remote[key])) {
       remote[key].forEach(ri => {
-        const uniqueKey = ri.id || ri.dt || ri.data + ri.hora;
         const localItems = DB[key];
-        const exists = localItems.some(li => (li.id && ri.id && li.id === ri.id) || (li.dt === ri.dt));
+        const exists = localItems.some(li => (li.id && ri.id && String(li.id) === String(ri.id)) || (li.dt && ri.dt && li.dt === ri.dt));
         if (!exists) {
           localItems.push(ri);
           hasUpdates = true;
         }
       });
       if (DB[key].length > remote[key].length) hasMissingInCloud = true;
-      
-      // Ordena por data (opcional, mas bom para UI)
       DB[key].sort((a,b) => new Date(b.dt || b.data) - new Date(a.dt || a.data));
     }
   });
 
-  // 4. Integridade de IDs: Sincroniza os contadores para o maior valor
+  // 4. Integridade de IDs
   if (remote.nextId) {
     Object.keys(remote.nextId).forEach(k => {
       DB.nextId[k] = Math.max(DB.nextId[k] || 0, remote.nextId[k] || 0);
     });
   }
 
-  // 4. Configurações (A configuração mais recente ou existente vence)
+  // 5. Configurações
   if (remote.config) {
-    if (!DB.config) {
-      DB.config = remote.config;
-      hasUpdates = true;
-    } else {
-      // Se o remoto tem um sync mais recente, atualiza o local
-      if (remote.config.lastSyncDiario > (DB.config.lastSyncDiario || '')) {
-        DB.config.lastSyncDiario = remote.config.lastSyncDiario;
-        hasUpdates = true;
-      }
-      if (remote.config.lastBackupSync > (DB.config.lastBackupSync || '')) {
-        DB.config.lastBackupSync = remote.config.lastBackupSync;
-        hasUpdates = true;
-      }
+    if (remote.config.lastSyncDiario > (DB.config.lastSyncDiario || '')) {
+      DB.config.lastSyncDiario = remote.config.lastSyncDiario;
+    }
+    if (remote.config.lastBackupSync > (DB.config.lastBackupSync || '')) {
+      DB.config.lastBackupSync = remote.config.lastBackupSync;
     }
   }
 
   if (hasUpdates) {
-    saveDB();
+    localStorage.setItem('convpro_db', JSON.stringify(DB));
     repairDB();
   } else if (hasMissingInCloud) {
-    console.log("⬆️ Banco local possui mais dados que a nuvem. Forçando upload...");
+    console.log("⬆️ Novas mesas locais detectadas. Sincronizando com a nuvem...");
     saveDB();
   }
   return hasUpdates;
@@ -495,12 +507,22 @@ function repairDB() {
     const map = new Map();
     const cleanList = [];
     let deduplicatedCount = 0;
+    const now = Date.now();
+    const maxAgeMs = 3 * 24 * 60 * 60 * 1000; // 3 dias em ms
 
     DB.mesas_abertas.forEach(m => {
       if (!m || !m.cliente) return;
       if (!m.id) m.id = Date.now() + Math.floor(Math.random() * 10000);
-      if (!m.dtAtualizacao) m.dtAtualizacao = getLocalISODate();
+      if (!m.dtCriacao) m.dtCriacao = getLocalISODate();
+      if (!m.dtAtualizacao) m.dtAtualizacao = m.dtCriacao;
       if (!m.itens || !Array.isArray(m.itens)) m.itens = [];
+
+      // Descarta mesas zumbi com mais de 3 dias sem atualização
+      const mDate = new Date(m.dtAtualizacao || m.dtCriacao).getTime();
+      if (now - mDate > maxAgeMs) {
+        console.warn(`[REPARO] Mesa antiga/zumbi "${m.cliente}" criada em ${m.dtCriacao} foi descartada por ter mais de 3 dias.`);
+        return;
+      }
 
       const key = normalizeMesaKey(m.cliente) || m.cliente.trim().toLowerCase();
       if (!map.has(key)) {
@@ -535,10 +557,15 @@ function repairDB() {
       }
     });
 
-    if (deduplicatedCount > 0) {
-      console.warn(`[REPARO] ${deduplicatedCount} mesa(s) duplicada(s) foram fundidas automaticamente.`);
+    if (deduplicatedCount > 0 || DB.mesas_abertas.length !== cleanList.length) {
+      console.warn(`[REPARO] Lista de mesas higienizada: ${cleanList.length} mesa(s) ativa(s).`);
       DB.mesas_abertas = cleanList;
     }
+  }
+
+  // Garantir array de pedidos digitais processados
+  if (!DB.pedidos_processados || !Array.isArray(DB.pedidos_processados)) {
+    DB.pedidos_processados = [];
   }
 
   // Garantir objeto de config
@@ -627,9 +654,16 @@ async function checkPedidosDigitais() {
       let notify = false;
       const idsRecebidos = [];
       DB.mesas_abertas = DB.mesas_abertas || [];
+      DB.pedidos_processados = DB.pedidos_processados || [];
 
       data.pedidos_novos.forEach(ped => {
         idsRecebidos.push(ped.id);
+        
+        // Evita reprocessar o mesmo pedido se já foi processado neste terminal
+        if (DB.pedidos_processados.includes(ped.id)) return;
+        DB.pedidos_processados.push(ped.id);
+        if (DB.pedidos_processados.length > 500) DB.pedidos_processados.shift();
+
         const idx = DB.mesas_abertas.findIndex(x => matchMesa(x.cliente, ped.cliente));
         
         let obsStr = ped.obs ? `[APP] ${ped.obs}` : '[APP] Novo Pedido';
