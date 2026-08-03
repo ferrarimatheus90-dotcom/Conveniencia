@@ -4406,12 +4406,16 @@ function importarBackup(){
       }
       DB = dbParsed;
       
-      showToast('Enviando backup para a nuvem. Aguarde...', 'info');
-      await saveDB(); // Await ensures Supabase upload completes
+      // Salva no localStorage local imediatamente para garantir disponibilidade sem depender da nuvem
+      localStorage.setItem('convpro_db', JSON.stringify(DB));
       
       auditLog('BACKUP_IMPORT', 'Restauração de backup realizada');
-      showToast('Banco de dados restaurado e sincronizado com a nuvem.', 'success');
-      setTimeout(() => location.reload(), 1500);
+      showToast('✅ Banco de dados restaurado com sucesso!', 'success');
+      
+      // Envia para a nuvem em segundo plano sem travar o recarregamento
+      saveDB().catch(err => console.warn("Supabase sync pendente:", err));
+      
+      setTimeout(() => location.reload(), 1000);
     } catch(err) {
       showToast('Erro ao ler arquivo: ' + err.message, 'error');
     }
