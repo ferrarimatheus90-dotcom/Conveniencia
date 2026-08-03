@@ -449,17 +449,15 @@ function mergeRemoteDB(remote) {
 
 async function loadDBFromCloud() {
   try {
-    const { data, error } = await sb
-      .from('config_app')
-      .select('json_db')
-      .eq('id', 1)
-      .single();
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 2000));
+    const cloudPromise = sb.from('config_app').select('json_db').eq('id', 1).single();
+    const res = await Promise.race([cloudPromise, timeoutPromise]);
 
-    if (error && error.code !== 'PGRST116') throw error;
+    if (res && res.error && res.error.code !== 'PGRST116') throw res.error;
 
-    if (data && data.json_db) {
+    if (res && res.data && res.data.json_db) {
       console.log("📥 Dados recebidos do Supabase. Iniciando merge...");
-      const updated = mergeRemoteDB(data.json_db);
+      const updated = mergeRemoteDB(res.data.json_db);
       if (updated) {
         console.log("✨ Banco de dados atualizado com informações da nuvem.");
         localStorage.setItem('convpro_db', JSON.stringify(DB));
@@ -467,7 +465,7 @@ async function loadDBFromCloud() {
       return updated;
     }
   } catch(e) {
-    console.error("❌ Falha ao carregar do Supabase:", e);
+    console.warn("❌ Supabase não respondeu a tempo (Offline/Timeout):", e.message);
   }
   return false;
 }
@@ -1070,38 +1068,6 @@ async function doLoginOffline(){
 
 async function finishLogin(user, rem){
   const btn = document.querySelector('.login-btn');
-  if(btn) { btn.innerHTML = 'Sincronizando...'; btn.disabled = true; }
-  
-  // 1. Puxar do Supabase imediatamente antes de mostrar a interface
-  try {
-    const updatedFromSupabase = await loadDBFromCloud();
-    if (updatedFromSupabase) {
-      console.log("✨ Banco de dados inicializado a partir do Supabase.");
-    }
-
-    // O Sheets roda em background para pegar qualquer descompasso que porventura só tenha salvo nele
-    if (GOOGLE_SHEETS_URL) {
-      _gsGet('carregar')
-        .then(r => r.json())
-        .then(remoteDb => {
-            const hasUpdates = mergeRemoteDB(remoteDb);
-            if (hasUpdates) {
-                console.log("✨ Banco de dados mesclado via Google Sheets (fallback).");
-                localStorage.setItem('convpro_db', JSON.stringify(DB));
-                if (typeof sb !== 'undefined') {
-                   sb.from('config_app').upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
-                }
-                if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
-                if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
-                if (currentPage === 'vendas') renderProdutos_venda();
-            }
-        })
-        .catch(e => console.warn("Erro no fallback do Google Sheets:", e));
-    }
-  } catch (e) {
-    console.error("Falha no sync inicial do Supabase:", e);
-  }
-
   if(btn) { btn.innerHTML = 'Entrar'; btn.disabled = false; }
   
   if(rem) {
@@ -1110,10 +1076,39 @@ async function finishLogin(user, rem){
     localStorage.removeItem('convpro_savedUser');
   }
   currentUser=user;
+
+  // Transição de tela imediata (0ms)
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').style.display='flex';
   document.getElementById('sidebarUser').textContent=user.name+' · '+roleLabel(user.role);
   buildSidebar();
+
+  // Puxar da nuvem em segundo plano de forma totalmente assíncrona
+  loadDBFromCloud().then(updatedFromSupabase => {
+    if (updatedFromSupabase) {
+      console.log("✨ Banco de dados inicializado a partir do Supabase.");
+    }
+  }).catch(e => console.warn("Falha no sync inicial do Supabase:", e));
+
+  // Fallback silencioso do Google Sheets
+  if (GOOGLE_SHEETS_URL) {
+    _gsGet('carregar')
+      .then(r => r.json())
+      .then(remoteDb => {
+          const hasUpdates = mergeRemoteDB(remoteDb);
+          if (hasUpdates) {
+              console.log("✨ Banco de dados mesclado via Google Sheets (fallback).");
+              localStorage.setItem('convpro_db', JSON.stringify(DB));
+              if (typeof sb !== 'undefined') {
+                 sb.from('config_app').upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
+              }
+              if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
+              if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
+              if (currentPage === 'vendas') renderProdutos_venda();
+          }
+      })
+      .catch(e => console.warn("Erro no fallback do Google Sheets:", e));
+  }
   
   // Customização dinâmica para o usuário Desenvolvedor (DEV Mode)
   const verDisp = document.getElementById('appVersionDisplay');
