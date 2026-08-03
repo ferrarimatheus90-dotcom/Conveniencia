@@ -4647,7 +4647,7 @@ window.handleVersionClick = function() {
   if (currentUser && currentUser.role === 'dev') {
     abrirPainelDev();
   } else {
-    showToast("Versão do Sistema: " + (document.getElementById('appVersionDisplay')?.textContent.replace('🛡️ Dev Mode · ', '') || 'v2026.05.19.v1'), "info");
+    showToast("Versão do Sistema: " + (document.getElementById('appVersionDisplay')?.textContent.replace('🛡️ Dev Mode · ', '') || 'v2026.08.02.v1'), "info");
   }
 };
 
@@ -4810,7 +4810,20 @@ window.abrirPainelDev = function() {
       <div class="changelog-timeline">
         
         <div class="changelog-item current">
-          <div class="changelog-version">v2026.05.19.v1 <span class="badge green" style="background:#00E676; color:black; font-weight:bold;">Atual</span></div>
+          <div class="changelog-version">v2026.08.02.v1 <span class="badge green" style="background:#00E676; color:black; font-weight:bold;">Atual</span></div>
+          <div class="changelog-date">02 de Agosto de 2026 · 22:20</div>
+          <div class="changelog-tags">
+            <span class="changelog-tag fix">bugfix</span>
+            <span class="changelog-tag sync">sincronização</span>
+          </div>
+          <ul class="changelog-changes">
+            <li>Correção do problema de duplicação e ressuscitação de mesas e comandas abertas na sincronização multi-dispositivo.</li>
+            <li>Melhoria na desduplicação automática e correspondência flexível de comandas.</li>
+          </ul>
+        </div>
+
+        <div class="changelog-item">
+          <div class="changelog-version">v2026.05.19.v1</div>
           <div class="changelog-date">19 de Maio de 2026 · 21:00</div>
           <div class="changelog-tags">
             <span class="changelog-tag feat">feature</span>
