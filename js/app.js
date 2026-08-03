@@ -242,6 +242,16 @@ async function saveDB(){
   if (!window._isSyncingGS) {
     syncToGoogleSheets();
   }
+
+  // Backup automático diário no Google Drive (se ainda não tiver sido feito hoje)
+  if (GOOGLE_SHEETS_URL) {
+    const hojeStr = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+    const ultimoBackupStr = DB.config?.lastBackupSync ? new Date(DB.config.lastBackupSync).toLocaleDateString('pt-BR').replace(/\//g,'-') : '';
+    if (ultimoBackupStr !== hojeStr && !window._isBackupDrivePending) {
+      window._isBackupDrivePending = true;
+      salvarBackupGoogleDrive().finally(() => { window._isBackupDrivePending = false; });
+    }
+  }
 }
 
 function updateCloudIcon(status, errorMsg = '') {
@@ -972,11 +982,48 @@ async function doLogin(){
   const btn = document.querySelector('.login-btn');
   if(btn) { btn.innerHTML = 'Entrando...'; btn.disabled = true; }
 
-  const { data, error } = await sb.auth.signInWithPassword({ email: u, password: p });
+  let data = null;
+  let error = null;
 
-  if(error || !data.user) {
+  try {
+    // Timeout de 5 segundos para a requisição com o Supabase
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('TIMEOUT_SUPABASE')), 5000)
+    );
+
+    const loginPromise = sb.auth.signInWithPassword({ email: u, password: p });
+    const res = await Promise.race([loginPromise, timeoutPromise]);
+    data = res.data;
+    error = res.error;
+  } catch(err) {
+    console.warn("⚠️ Supabase fora do ar ou sem resposta:", err.message);
+    error = err;
+  }
+
+  // Se o Supabase responder com erro normal de senha
+  if(error && error.message !== 'TIMEOUT_SUPABASE' && !error.message?.includes('Fetch')) {
     if(btn) { btn.innerHTML = 'Entrar'; btn.disabled = false; }
     document.getElementById('loginError').style.display='block';
+    return;
+  }
+
+  // Se o Supabase estiver OFFLINE/TIMEOUT (ex: cota estourada 522), permite entrada em Modo Local
+  if(error || !data || !data.user) {
+    console.log("🌐 Entrando em Modo Local (Offline) devido a indisponibilidade do Supabase...");
+    showToast('⚠️ Nuvem indisponível no momento. Entrando em Modo Local...', 'warning');
+
+    let calculatedRole = 'funcionario';
+    if (u.includes('dev')) calculatedRole = 'dev';
+    else if (u.includes('admin')) calculatedRole = 'admin';
+
+    const offlineUser = {
+      id: 'local_' + Date.now(),
+      username: u,
+      email: u,
+      role: calculatedRole,
+      name: u
+    };
+    await finishLogin(offlineUser, rem);
     return;
   }
 
@@ -984,7 +1031,6 @@ async function doLogin(){
 
   const meta = data.user.user_metadata || {};
   
-  // Garantir privilégios de admin para o desenvolvedor mesmo se faltar nos metadados ou se estiver incorreto
   let calculatedRole = meta.role || 'funcionario';
   if (data.user.email.includes('dev')) {
     calculatedRole = 'dev';
@@ -1088,7 +1134,7 @@ async function finishLogin(user, rem){
   setInterval(updateDate,60000);
   startPollingOrders();
 
-  // Sincronização Automática Background via Supabase (Rápido e leve)
+  // Sincronização Automática Background via Supabase (Mudar para a cada 30 minutos para economizar cota)
   if (!window.bgSyncInterval) {
     window.bgSyncInterval = setInterval(async () => {
       const hasUpdates = await loadDBFromCloud();
@@ -1097,7 +1143,7 @@ async function finishLogin(user, rem){
         if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
         if (currentPage === 'vendas') renderProdutos_venda();
       }
-    }, 20000); // Verificar a cada 20 segundos
+    }, 30 * 60 * 1000); // Verificar a cada 30 minutos
   }
 
   // Sincronização Automática para Planilha (a cada 5 minutos, silenciosa)
@@ -1107,7 +1153,7 @@ async function finishLogin(user, rem){
     }, 5 * 60 * 1000); // 5 minutos
   }
 
-  // Sincronização Diária às 03:00 (garante que ambos os dispositivos ficam iguais)
+  // Sincronização Diária às 03:00 e verificação de backup diário no Google Drive
   if (GOOGLE_SHEETS_URL) {
     agendarSyncDiario();
     
@@ -1119,6 +1165,14 @@ async function finishLogin(user, rem){
     if (ultimoSyncStr !== hojeStr) {
       console.log('[Sync] Backup diário pendente detectado. Executando agora...');
       executarSyncDiario();
+    } else {
+      // Garante também a geração do arquivo de backup no Google Drive se ainda não ocorreu hoje
+      const dataHojeStr = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+      const ultimoDriveBackup = DB.config?.lastBackupSync ? new Date(DB.config.lastBackupSync).toLocaleDateString('pt-BR').replace(/\//g,'-') : '';
+      if (ultimoDriveBackup !== dataHojeStr) {
+        console.log('[Drive Backup] Disparando backup diário para o Google Drive...');
+        salvarBackupGoogleDrive();
+      }
     }
   }
 
