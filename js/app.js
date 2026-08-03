@@ -1,4 +1,5 @@
-// ===================== CONFIGURAÇÃO SUPABASE =====================
+// ===================== CONFIGURAÇÃO GERAL E SUPABASE =====================
+const CURRENT_APP_VERSION = 'v2026.08.02.v1';
 const SUPABASE_URL = 'https://ryizqbbjxjrxcortkshv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXpxYmJqeGpyeGNvcnRrc2h2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNDk3MzQsImV4cCI6MjA5MTkyNTczNH0.nhb-bPiPN_q29-LfdrnjtYLq4k38hFwuuYu6bjuDCUM'; 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -1119,7 +1120,7 @@ async function finishLogin(user, rem){
       verDisp.style.color = '#00E676';
       verDisp.style.fontWeight = 'bold';
       verDisp.title = 'Abrir Painel do Desenvolvedor';
-      verDisp.innerHTML = '🛡️ Dev Mode · v2026.05.19.v1';
+      verDisp.innerHTML = '🛡️ Dev Mode · ' + CURRENT_APP_VERSION;
       
       // Feedback visual ao passar o mouse (micro-animação premium)
       const onEnter = () => { 
@@ -1138,7 +1139,7 @@ async function finishLogin(user, rem){
       verDisp.style.color = '';
       verDisp.style.fontWeight = '';
       verDisp.title = '';
-      verDisp.innerHTML = 'v2026.05.19.v1';
+      verDisp.innerHTML = CURRENT_APP_VERSION;
     }
   }
   
