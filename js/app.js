@@ -979,6 +979,11 @@ async function doLogin(){
   const p = document.getElementById('loginPass').value;
   const rem = document.getElementById('loginRemember') ? document.getElementById('loginRemember').checked : false;
 
+  if (!u) {
+    document.getElementById('loginError').style.display='block';
+    return;
+  }
+
   const btn = document.querySelector('.login-btn');
   if(btn) { btn.innerHTML = 'Entrando...'; btn.disabled = true; }
 
@@ -986,69 +991,81 @@ async function doLogin(){
   let error = null;
 
   try {
-    // Timeout de 5 segundos para a requisição com o Supabase
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('TIMEOUT_SUPABASE')), 5000)
+      setTimeout(() => reject(new Error('TIMEOUT_SUPABASE')), 3000)
     );
-
     const loginPromise = sb.auth.signInWithPassword({ email: u, password: p });
     const res = await Promise.race([loginPromise, timeoutPromise]);
     data = res.data;
     error = res.error;
   } catch(err) {
-    console.warn("⚠️ Supabase fora do ar ou sem resposta:", err.message);
+    console.warn("⚠️ Supabase indisponível/offline:", err.message);
     error = err;
   }
 
-  // Se o Supabase responder com erro normal de senha
-  if(error && error.message !== 'TIMEOUT_SUPABASE' && !error.message?.includes('Fetch')) {
+  // Se o Supabase autenticou com sucesso na nuvem
+  if (!error && data && data.user) {
+    document.getElementById('loginError').style.display='none';
+    const meta = data.user.user_metadata || {};
+    let calculatedRole = meta.role || 'funcionario';
+    if (data.user.email.includes('dev')) calculatedRole = 'dev';
+    else if (data.user.email.includes('admin')) calculatedRole = 'admin';
+
+    const user = {
+      id: data.user.id,
+      username: data.user.email,
+      email: data.user.email,
+      role: calculatedRole,
+      name: meta.name || data.user.email
+    };
+    await finishLogin(user, rem);
+    return;
+  }
+
+  // Se o Supabase recusou com senha sabidamente errada E a nuvem respondeu normalmente (status 400)
+  if (error && error.status === 400 && error.message && error.message.toLowerCase().includes('invalid')) {
     if(btn) { btn.innerHTML = 'Entrar'; btn.disabled = false; }
     document.getElementById('loginError').style.display='block';
     return;
   }
 
-  // Se o Supabase estiver OFFLINE/TIMEOUT (ex: cota estourada 522), permite entrada em Modo Local
-  if(error || !data || !data.user) {
-    console.log("🌐 Entrando em Modo Local (Offline) devido a indisponibilidade do Supabase...");
-    showToast('⚠️ Nuvem indisponível no momento. Entrando em Modo Local...', 'warning');
+  // Para qualquer outro caso (Supabase 522, indisponível, cota estourada, offline): Entrar em Modo Local automaticamente
+  console.log("🌐 Conexão de nuvem com erro/timeout. Entrando em Modo Local (Offline)...");
+  showToast('⚡ Nuvem indisponível no momento. Entrando em Modo Local...', 'warning');
 
-    let calculatedRole = 'funcionario';
-    if (u.includes('dev')) calculatedRole = 'dev';
-    else if (u.includes('admin')) calculatedRole = 'admin';
+  let calculatedRole = 'funcionario';
+  if (u.includes('dev')) calculatedRole = 'dev';
+  else if (u.includes('admin')) calculatedRole = 'admin';
 
-    const offlineUser = {
-      id: 'local_' + Date.now(),
-      username: u,
-      email: u,
-      role: calculatedRole,
-      name: u
-    };
-    await finishLogin(offlineUser, rem);
-    return;
-  }
-
-  document.getElementById('loginError').style.display='none';
-
-  const meta = data.user.user_metadata || {};
-  
-  let calculatedRole = meta.role || 'funcionario';
-  if (data.user.email.includes('dev')) {
-    calculatedRole = 'dev';
-  } else if (data.user.email.includes('admin')) {
-    calculatedRole = 'admin';
-  } else if (!['admin', 'dev', 'funcionario'].includes(calculatedRole)) {
-    calculatedRole = 'funcionario';
-  }
-
-  const user = {
-    id: data.user.id,
-    username: data.user.email,
-    email: data.user.email,
+  const offlineUser = {
+    id: 'local_' + Date.now(),
+    username: u,
+    email: u,
     role: calculatedRole,
-    name: meta.name || data.user.email
+    name: u
   };
 
-  await finishLogin(user, rem);
+  await finishLogin(offlineUser, rem);
+}
+
+async function doLoginOffline(){
+  const u = (document.getElementById('loginUser')?.value || 'admin').trim();
+  const rem = document.getElementById('loginRemember') ? document.getElementById('loginRemember').checked : false;
+  showToast('⚡ Entrando em Modo Local (Offline)...', 'info');
+
+  let calculatedRole = 'funcionario';
+  if (u.includes('dev')) calculatedRole = 'dev';
+  else if (u.includes('admin') || !u) calculatedRole = 'admin';
+
+  const offlineUser = {
+    id: 'local_' + Date.now(),
+    username: u || 'admin',
+    email: u || 'admin@conveniencia.com',
+    role: calculatedRole,
+    name: u || 'Administrador'
+  };
+
+  await finishLogin(offlineUser, rem);
 }
 
 async function finishLogin(user, rem){
