@@ -76,11 +76,135 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (document.getElementById('loginUser')) document.getElementById('loginUser').value = savedUser;
     if (document.getElementById('loginRemember')) document.getElementById('loginRemember').checked = true;
   }
+
+  // INDEXEDDB INIT
+  try {
+    const idbData = await loadFromIDB();
+    if (idbData && idbData.vendas) {
+      const currentVendas = DB.vendas ? DB.vendas.length : 0;
+      const idbVendas = idbData.vendas.length;
+      
+      if (idbVendas > currentVendas || !localStorage.getItem('convpro_db')) {
+          console.log(`✨ Restaurando banco de dados a partir do IndexedDB (Vendas: IDB ${idbVendas} vs LocalStorage ${currentVendas})`);
+          DB = idbData;
+          localStorage.setItem('convpro_db', JSON.stringify(DB));
+          if (typeof renderDashboard === 'function' && currentPage === 'dashboard') renderDashboard();
+          if (typeof renderCaixa === 'function' && currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
+      } else {
+         // IDB exists but localStorage has more/equal, ensure IDB is updated
+         saveToIDB(DB);
+      }
+    } else if (!idbData && DB.vendas) {
+      // Migrate existing localstorage DB to IDB
+      saveToIDB(DB);
+    }
+  } catch(e) {
+    console.error("Erro na inicialização do IndexedDB", e);
+  }
+
+  // Sincronização automática para Google Sheets a cada 30 minutos
+  setInterval(() => {
+    if (GOOGLE_SHEETS_URL) {
+      console.log("Executando auto-sync de 30min para o Google Sheets...");
+      _gsPost({ action: 'sincronizar', db: DB }).catch(e => console.warn("Erro no auto-sync 30min:", e));
+    }
+  }, 30 * 60 * 1000);
 });
 
 
-let DB = JSON.parse(localStorage.getItem('convpro_db') || 'null') || {
+let DB = (() => {
+  try {
+    const data = localStorage.getItem('convpro_db');
+    return data ? JSON.parse(data) : null;
+  } catch (e) {
+    console.error('CRITICAL: Failed to parse convpro_db from localStorage', e);
+    const corrupted = localStorage.getItem('convpro_db');
+    if (corrupted) {
+      localStorage.setItem('convpro_db_corrupted_backup_' + Date.now(), corrupted);
+      alert('⚠️ ATENÇÃO: Ocorreu um erro crítico ao carregar os dados locais (possível corrupção de memória).\n\nUm backup dos dados corrompidos foi salvo internamente.\nO sistema tentará iniciar vazio. Por favor, contate o suporte imediatamente para tentar recuperar as vendas.');
+    }
+    return null;
+  }
+})() || {
   produtos: [
+// ===================== INDEXEDDB WRAPPER & AUTO-BACKUP =====================
+const IDB_NAME = 'ConvenienciaDB';
+const IDB_VERSION = 1;
+const IDB_STORE_NAME = 'appData';
+const IDB_KEY = 'convpro_db';
+
+function openIDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IDB_NAME, IDB_VERSION);
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE_NAME)) {
+        db.createObjectStore(IDB_STORE_NAME);
+      }
+    };
+    request.onsuccess = (e) => resolve(e.target.result);
+    request.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function saveToIDB(data) {
+  try {
+    const db = await openIDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(IDB_STORE_NAME);
+      const req = store.put(data, IDB_KEY);
+      req.onsuccess = () => resolve(true);
+      req.onerror = (e) => reject(e.target.error);
+    });
+  } catch (e) {
+    console.error('Falha ao salvar no IndexedDB', e);
+    return false;
+  }
+}
+
+async function loadFromIDB() {
+  try {
+    const db = await openIDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_NAME, 'readonly');
+      const store = tx.objectStore(IDB_STORE_NAME);
+      const req = store.get(IDB_KEY);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = (e) => reject(e.target.error);
+    });
+  } catch (e) {
+    console.error('Falha ao ler do IndexedDB', e);
+    return null;
+  }
+}
+
+function autoDownloadBackupDiario() {
+  try {
+    const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+    const ultimoBackup = localStorage.getItem('convpro_last_autobackup');
+    
+    if (ultimoBackup !== hoje) {
+      console.log('Gerando auto-backup diário...');
+      const str = JSON.stringify(DB, null, 2);
+      const blob = new Blob([str], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `backup_conveniencia_automatico_${hoje}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      localStorage.setItem('convpro_last_autobackup', hoje);
+    }
+  } catch(e) {
+    console.error("Erro no auto-backup diário:", e);
+  }
+}
+// =========================================================================
+
     // ── ESPETINHOS / PRODUÇÃO ──────────────────────────────────
     {id:1,nome:'Espetinho de Frango',categoria:'Espetinho',operacao:'Espetinho',unidade:'un',custo:3.5,preco:8,estoque:0,estoqueMin:5,status:'ativo',tipo:'produzido'},
     {id:2,nome:'Espetinho de Carne',categoria:'Espetinho',operacao:'Espetinho',unidade:'un',custo:4,preco:9,estoque:0,estoqueMin:5,status:'ativo',tipo:'produzido'},
@@ -203,7 +327,23 @@ function _gsPost(payload) {
 
 async function saveDB(){
   repairDB(); // Garante integridade antes de salvar
-  localStorage.setItem('convpro_db',JSON.stringify(DB)); // Backup local rápido
+  
+  // 1. Salva primariamente no cofre blindado do navegador (IndexedDB)
+  await saveToIDB(DB);
+  
+  // 2. Tenta salvar no localStorage (Fallback para carregamento rápido)
+  try {
+    localStorage.setItem('convpro_db', JSON.stringify(DB)); 
+  } catch (e) {
+    console.error('CRITICAL: Failed to save to localStorage', e);
+    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+      alert('⚠️ ATENÇÃO: O limite do cache básico encheu! Suas vendas foram salvas no cofre interno de forma segura, mas por favor faça um backup manual hoje (botão Exportar Backup).');
+    }
+  }
+  
+  // 3. Checa se precisa baixar backup automático no PC
+  autoDownloadBackupDiario();
+
   
   updateCloudIcon('loading');
 
@@ -2179,6 +2319,12 @@ function finalizarVenda(OverridePag, mistoJson){
   }
 
   saveDB();
+  
+  // Envio imediato da venda para a Planilha do Google (Fallback em Tempo Real)
+  if (GOOGLE_SHEETS_URL) {
+     _gsPost({ action: 'sincronizar', db: DB }).catch(e => console.warn('Erro ao sincronizar venda na planilha', e));
+  }
+  
   auditLog('VENDA',`#${venda.id} – ${fmt(total)} – ${pag}`);
   showToast('Venda registrada com sucesso! '+fmt(total),'success');
   
