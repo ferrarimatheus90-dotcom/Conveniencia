@@ -1,7 +1,7 @@
 // ===================== CONFIGURAÇÃO GERAL E SUPABASE =====================
 const CURRENT_APP_VERSION = 'v2026.08.02.v1';
-const SUPABASE_URL = 'https://ryizqbbjxjrxcortkshv.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXpxYmJqeGpyeGNvcnRrc2h2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNDk3MzQsImV4cCI6MjA5MTkyNTczNH0.nhb-bPiPN_q29-LfdrnjtYLq4k38hFwuuYu6bjuDCUM'; 
+const SUPABASE_URL = 'https://oalmwbivirqunhsrwzqq.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hbG13Yml2aXJxdW5oc3J3enFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyMDE4NDYsImV4cCI6MjEwMTc3Nzg0Nn0.h2rUUKnzLHo2tBR1QDZYsR9agi9DapYSBFC8bRPJh38';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ===================== THEME =====================
