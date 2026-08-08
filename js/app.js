@@ -111,22 +111,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   }, 30 * 60 * 1000);
 });
 
-
-let DB = (() => {
-  try {
-    const data = localStorage.getItem('convpro_db');
-    return data ? JSON.parse(data) : null;
-  } catch (e) {
-    console.error('CRITICAL: Failed to parse convpro_db from localStorage', e);
-    const corrupted = localStorage.getItem('convpro_db');
-    if (corrupted) {
-      localStorage.setItem('convpro_db_corrupted_backup_' + Date.now(), corrupted);
-      alert('⚠️ ATENÇÃO: Ocorreu um erro crítico ao carregar os dados locais (possível corrupção de memória).\n\nUm backup dos dados corrompidos foi salvo internamente.\nO sistema tentará iniciar vazio. Por favor, contate o suporte imediatamente para tentar recuperar as vendas.');
-    }
-    return null;
-  }
-})() || {
-  produtos: [
 // ===================== INDEXEDDB WRAPPER & AUTO-BACKUP =====================
 const IDB_NAME = 'ConvenienciaDB';
 const IDB_VERSION = 1;
@@ -205,6 +189,21 @@ function autoDownloadBackupDiario() {
 }
 // =========================================================================
 
+let DB = (() => {
+  try {
+    const data = localStorage.getItem('convpro_db');
+    return data ? JSON.parse(data) : null;
+  } catch (e) {
+    console.error('CRITICAL: Failed to parse convpro_db from localStorage', e);
+    const corrupted = localStorage.getItem('convpro_db');
+    if (corrupted) {
+      localStorage.setItem('convpro_db_corrupted_backup_' + Date.now(), corrupted);
+      alert('⚠️ ATENÇÃO: Ocorreu um erro crítico ao carregar os dados locais (possível corrupção de memória).\n\nUm backup dos dados corrompidos foi salvo internamente.\nO sistema tentará iniciar vazio. Por favor, contate o suporte imediatamente para tentar recuperar as vendas.');
+    }
+    return null;
+  }
+})() || {
+  produtos: [
     // ── ESPETINHOS / PRODUÇÃO ──────────────────────────────────
     {id:1,nome:'Espetinho de Frango',categoria:'Espetinho',operacao:'Espetinho',unidade:'un',custo:3.5,preco:8,estoque:0,estoqueMin:5,status:'ativo',tipo:'produzido'},
     {id:2,nome:'Espetinho de Carne',categoria:'Espetinho',operacao:'Espetinho',unidade:'un',custo:4,preco:9,estoque:0,estoqueMin:5,status:'ativo',tipo:'produzido'},
