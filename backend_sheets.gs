@@ -108,6 +108,39 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({success: true, message: "Sincronizado com sucesso!"})).setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (payload.action === 'nova_venda') {
+      var venda = payload.venda;
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName('Vendas_Individuais');
+      if (!sheet) {
+        sheet = ss.insertSheet('Vendas_Individuais');
+        sheet.appendRow(["ID", "Data", "Hora", "Cliente", "Total", "Custo", "Pagamento", "Itens", "Vendedor", "Data/Hora Completa", "_misto_json"]);
+        sheet.getRange(1, 1, 1, 11).setFontWeight("bold").setBackground("#f3f3f3");
+      }
+      var itensDesc = "";
+      if (venda.itens && Array.isArray(venda.itens)) {
+        itensDesc = venda.itens.map(function(item) { return item.qtd + "x " + item.nome; }).join(', ');
+      }
+      var mistoJson = "";
+      if (venda.misto) {
+        mistoJson = JSON.stringify(venda.misto);
+      }
+      sheet.appendRow([
+        venda.id, 
+        venda.data, 
+        venda.hora, 
+        venda.cliente || "", 
+        venda.total, 
+        venda.custo || 0,
+        venda.pagamento || "", 
+        itensDesc,
+        venda.usuario || "",
+        venda.dt || "",
+        mistoJson
+      ]);
+      return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
+    }
+
     if (payload.action === 'novo_pedido') {
       var pedido = payload.pedido;
       var ss = SpreadsheetApp.getActiveSpreadsheet();

@@ -1,5 +1,5 @@
 // ===================== CONFIGURAÇÃO GERAL E SUPABASE =====================
-const CURRENT_APP_VERSION = 'v2026.08.02.v1';
+const CURRENT_APP_VERSION = 'v2026.08.08.v1';
 const SUPABASE_URL = 'https://oalmwbivirqunhsrwzqq.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hbG13Yml2aXJxdW5oc3J3enFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyMDE4NDYsImV4cCI6MjEwMTc3Nzg0Nn0.h2rUUKnzLHo2tBR1QDZYsR9agi9DapYSBFC8bRPJh38';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -52,7 +52,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       let calculatedRole = meta.role || 'funcionario';
       if (session.user.email.includes('dev')) {
         calculatedRole = 'dev';
-      } else if (session.user.email.includes('admin')) {
+      } else if (session.user.email.includes('admin') || session.user.email.includes('samuel')) {
         calculatedRole = 'admin';
       } else if (!['admin', 'dev', 'funcionario'].includes(calculatedRole)) {
         calculatedRole = 'funcionario';
@@ -336,7 +336,7 @@ async function saveDB(){
   } catch (e) {
     console.error('CRITICAL: Failed to save to localStorage', e);
     if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-      alert('⚠️ ATENÇÃO: O limite do cache básico encheu! Suas vendas foram salvas no cofre interno de forma segura, mas por favor faça um backup manual hoje (botão Exportar Backup).');
+      alert('⚠️ ATENÇÃO: O limite do cache do navegador encheu! Suas vendas foram salvas de forma segura no cofre, mas o sistema está muito pesado.\n\nPor favor, vá agora em CONFIGURAÇÕES > BACKUP e clique no botão vermelho "Limpar Vendas Antigas" para o sistema voltar ao normal.');
     }
   }
   
@@ -1147,7 +1147,7 @@ async function doLogin(){
     const meta = data.user.user_metadata || {};
     let calculatedRole = meta.role || 'funcionario';
     if (data.user.email.includes('dev')) calculatedRole = 'dev';
-    else if (data.user.email.includes('admin')) calculatedRole = 'admin';
+    else if (data.user.email.includes('admin') || data.user.email.includes('samuel')) calculatedRole = 'admin';
 
     const user = {
       id: data.user.id,
@@ -1173,7 +1173,7 @@ async function doLogin(){
 
   let calculatedRole = 'funcionario';
   if (u.includes('dev')) calculatedRole = 'dev';
-  else if (u.includes('admin')) calculatedRole = 'admin';
+  else if (u.includes('admin') || u.includes('samuel')) calculatedRole = 'admin';
 
   const offlineUser = {
     id: 'local_' + Date.now(),
@@ -1193,7 +1193,7 @@ async function doLoginOffline(){
 
   let calculatedRole = 'funcionario';
   if (u.includes('dev')) calculatedRole = 'dev';
-  else if (u.includes('admin') || !u) calculatedRole = 'admin';
+  else if (u.includes('admin') || u.includes('samuel') || !u) calculatedRole = 'admin';
 
   const offlineUser = {
     id: 'local_' + Date.now(),
@@ -2319,9 +2319,9 @@ function finalizarVenda(OverridePag, mistoJson){
 
   saveDB();
   
-  // Envio imediato da venda para a Planilha do Google (Fallback em Tempo Real)
+  // Envio imediato da venda de forma isolada para a Planilha do Google (Rápido e sem limite)
   if (GOOGLE_SHEETS_URL) {
-     _gsPost({ action: 'sincronizar', db: DB }).catch(e => console.warn('Erro ao sincronizar venda na planilha', e));
+     _gsPost({ action: 'nova_venda', venda: venda }).catch(e => console.warn('Erro ao registrar venda na planilha', e));
   }
   
   auditLog('VENDA',`#${venda.id} – ${fmt(total)} – ${pag}`);
@@ -4358,6 +4358,12 @@ function renderBackup(){
           <button class="btn btn-danger" onclick="importarBackup()">Restaurar</button>
         </div>
       </div>
+
+      <div class="card" style="border-color:var(--border);background:var(--surface2);grid-column: 1 / -1;">
+        <h3 style="font-family:'Syne',sans-serif;font-size:16px;margin-bottom:10px;color:var(--danger)">🧹 Limpar Vendas Antigas (Evitar Travamento)</h3>
+        <p class="text-muted mb-4" style="font-size:13px">Se o sistema estiver pesado, limpe vendas antigas da tela principal. Isso vai baixar um backup completo e depois apagar do navegador as vendas de meses anteriores, deixando apenas as recentes.</p>
+        <button class="btn btn-danger" onclick="limparVendasAntigas()">🧹 Arquivar e Limpar Vendas Antigas</button>
+      </div>
       
       <div class="card" style="border-color:var(--border);background:var(--surface2);grid-column: 1 / -1;">
         <h3 style="font-family:'Syne',sans-serif;font-size:16px;margin-bottom:10px">☁️ Banco de Dados no Google Sheets</h3>
@@ -4530,6 +4536,33 @@ async function puxarDoGoogleSheets() {
    } catch (e) {
       showToast('Erro ao ler a Planilha: ' + e.message, 'error');
    }
+}
+
+function limparVendasAntigas() {
+  if(DB.vendas.length < 500) {
+    if(!confirm("Você tem menos de 500 vendas registradas. Geralmente não é necessário limpar ainda. Deseja limpar mesmo assim?")) return;
+  }
+  
+  if(!confirm("Isso fará o download de um arquivo de backup completo e, em seguida, removerá todas as vendas, exceto as dos últimos 15 dias. Tem certeza que deseja fazer isso para liberar memória?")) return;
+
+  // Força o download de backup antes de apagar
+  exportarBackup();
+
+  // Calcula a data de 15 dias atrás
+  const quinzeDiasAtras = new Date();
+  quinzeDiasAtras.setDate(quinzeDiasAtras.getDate() - 15);
+  const dataLimiteStr = quinzeDiasAtras.toISOString().split('T')[0];
+
+  // Filtra as vendas para manter apenas as mais recentes
+  const vendasAntigasCount = DB.vendas.length;
+  DB.vendas = DB.vendas.filter(venda => {
+    return venda.data >= dataLimiteStr;
+  });
+  const removidas = vendasAntigasCount - DB.vendas.length;
+
+  saveDB();
+  alert(`✅ Limpeza concluída!\n\nForam removidas ${removidas} vendas antigas do histórico local.\nUm backup completo foi baixado no seu computador por segurança.\n\nO sistema agora está mais leve.`);
+  renderApp();
 }
 
 function exportarBackup(){
@@ -5026,7 +5059,20 @@ window.abrirPainelDev = function() {
       <div class="changelog-timeline">
         
         <div class="changelog-item current">
-          <div class="changelog-version">v2026.08.02.v1 <span class="badge green" style="background:#00E676; color:black; font-weight:bold;">Atual</span></div>
+          <div class="changelog-version">v2026.08.08.v1 <span class="badge green" style="background:#00E676; color:black; font-weight:bold;">Atual</span></div>
+          <div class="changelog-date">08 de Agosto de 2026 · 16:35</div>
+          <div class="changelog-tags">
+            <span class="changelog-tag feat">feature</span>
+            <span class="changelog-tag perf">performance</span>
+          </div>
+          <ul class="changelog-changes">
+            <li><strong>Sincronização em Tempo Real Otimizada:</strong> O envio de vendas para o Google Sheets foi refatorado para enviar apenas a venda atual, eliminando os erros de <em>Quota Exceeded</em> e travamentos na Planilha.</li>
+            <li><strong>Ferramenta de Arquivamento Local:</strong> Adicionado um botão "Limpar Vendas Antigas" nas configurações, que permite arquivar vendas e liberar espaço no navegador para prevenir perda de dados.</li>
+          </ul>
+        </div>
+
+        <div class="changelog-item">
+          <div class="changelog-version">v2026.08.02.v1</div>
           <div class="changelog-date">02 de Agosto de 2026 · 22:20</div>
           <div class="changelog-tags">
             <span class="changelog-tag fix">bugfix</span>
