@@ -768,6 +768,26 @@ async function syncToGoogleSheets() {
   }
 }
 
+window.forceSupabaseSync = async function() {
+  const btn = event?.currentTarget;
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.innerHTML = '⏳ Sinc. Nuvem...'; btn.disabled = true; }
+  
+  try {
+    const hasUpdates = await loadDBFromCloud();
+    if (hasUpdates || true) {
+      if (currentPage === 'dashboard') document.getElementById('content').innerHTML = renderDashboard();
+      else if (currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
+      else if (currentPage === 'vendas') { document.getElementById('content').innerHTML = renderVendas(); initVendas(); }
+      showToast('Dados puxados da nuvem com sucesso!', 'success');
+    }
+  } catch (e) {
+    showToast('Falha ao sincronizar: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.innerHTML = originalHtml; btn.disabled = false; }
+  }
+}
+
 window.forceSync = function() {
   if (!GOOGLE_SHEETS_URL) {
     showToast('URL da planilha não configurada!', 'error');
@@ -1838,7 +1858,7 @@ function renderDashboard(){
       </div>
       <div style="display:flex; gap:8px;">
         <button class="btn btn-ghost btn-sm" onclick="navigate('configuracoes')" style="font-size:10px; padding: 4px 8px;">⚙️ Ajustar Sync</button>
-        <button class="btn btn-ghost btn-sm" onclick="syncToGoogleSheets()" style="font-size:10px; padding: 4px 8px;">🔄 Sincronizar Agora</button>
+        <button class="btn btn-ghost btn-sm" onclick="forceSupabaseSync()" style="font-size:10px; padding: 4px 8px;">🔄 Sincronizar Agora</button>
       </div>
     </div>
   </div>
