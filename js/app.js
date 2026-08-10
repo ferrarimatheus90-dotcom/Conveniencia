@@ -547,16 +547,37 @@ function mergeRemoteDB(remote) {
   // 3. Vendas e Histórico: Adiciona o que não existe localmente
   ['vendas', 'compras', 'producoes', 'consumos', 'auditoria'].forEach(key => {
     if (remote[key] && Array.isArray(remote[key])) {
+      const localItems = DB[key];
+      const localIds = new Set();
+      const localDts = new Set();
+      
+      localItems.forEach(i => {
+        if (i.id) localIds.add(String(i.id));
+        if (i.dt) localDts.add(i.dt);
+      });
+
+      let itemsAdded = 0;
       remote[key].forEach(ri => {
-        const localItems = DB[key];
-        const exists = localItems.some(li => (li.id && ri.id && String(li.id) === String(ri.id)) || (li.dt && ri.dt && li.dt === ri.dt));
-        if (!exists) {
+        const existsById = ri.id && localIds.has(String(ri.id));
+        const existsByDt = ri.dt && localDts.has(ri.dt);
+        
+        if (!existsById && !existsByDt) {
           localItems.push(ri);
+          if (ri.id) localIds.add(String(ri.id));
+          if (ri.dt) localDts.add(ri.dt);
           hasUpdates = true;
+          itemsAdded++;
         }
       });
+
       if (DB[key].length > remote[key].length) hasMissingInCloud = true;
-      DB[key].sort((a,b) => new Date(b.dt || b.data) - new Date(a.dt || a.data));
+      if (itemsAdded > 0) {
+        DB[key].sort((a, b) => {
+          const d1 = b.dt || b.data || '';
+          const d2 = a.dt || a.data || '';
+          return d1.localeCompare(d2);
+        });
+      }
     }
   });
 
