@@ -589,7 +589,7 @@ function mergeRemoteDB(remote) {
 
 async function loadDBFromCloud() {
   try {
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 2000));
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 15000));
     const cloudPromise = sb.from('config_app').select('json_db').eq('id', 1).single();
     const res = await Promise.race([cloudPromise, timeoutPromise]);
 
