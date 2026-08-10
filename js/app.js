@@ -1,5 +1,5 @@
 // ===================== CONFIGURAÇÃO GERAL E SUPABASE =====================
-const CURRENT_APP_VERSION = 'v2026.08.08.v1';
+const CURRENT_APP_VERSION = 'v2026.08.09.v3';
 const SUPABASE_URL = 'https://oalmwbivirqunhsrwzqq.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hbG13Yml2aXJxdW5oc3J3enFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyMDE4NDYsImV4cCI6MjEwMTc3Nzg0Nn0.h2rUUKnzLHo2tBR1QDZYsR9agi9DapYSBFC8bRPJh38';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -50,7 +50,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       const meta = session.user.user_metadata || {};
       
       let calculatedRole = meta.role || 'funcionario';
-      if (session.user.email.includes('dev')) {
+      if (session.user.email.includes('dev') || session.user.email.includes('ferrari')) {
         calculatedRole = 'dev';
       } else if (session.user.email.includes('admin') || session.user.email.includes('samuel')) {
         calculatedRole = 'admin';
@@ -1146,7 +1146,7 @@ async function doLogin(){
     document.getElementById('loginError').style.display='none';
     const meta = data.user.user_metadata || {};
     let calculatedRole = meta.role || 'funcionario';
-    if (data.user.email.includes('dev')) calculatedRole = 'dev';
+    if (data.user.email.includes('dev') || data.user.email.includes('ferrari')) calculatedRole = 'dev';
     else if (data.user.email.includes('admin') || data.user.email.includes('samuel')) calculatedRole = 'admin';
 
     const user = {
@@ -1172,7 +1172,7 @@ async function doLogin(){
   showToast('⚡ Nuvem indisponível no momento. Entrando em Modo Local...', 'warning');
 
   let calculatedRole = 'funcionario';
-  if (u.includes('dev')) calculatedRole = 'dev';
+  if (u.includes('dev') || u.includes('ferrari')) calculatedRole = 'dev';
   else if (u.includes('admin') || u.includes('samuel')) calculatedRole = 'admin';
 
   const offlineUser = {
@@ -1192,7 +1192,7 @@ async function doLoginOffline(){
   showToast('⚡ Entrando em Modo Local (Offline)...', 'info');
 
   let calculatedRole = 'funcionario';
-  if (u.includes('dev')) calculatedRole = 'dev';
+  if (u.includes('dev') || u.includes('ferrari')) calculatedRole = 'dev';
   else if (u.includes('admin') || u.includes('samuel') || !u) calculatedRole = 'admin';
 
   const offlineUser = {
@@ -5059,7 +5059,21 @@ window.abrirPainelDev = function() {
       <div class="changelog-timeline">
         
         <div class="changelog-item current">
-          <div class="changelog-version">v2026.08.08.v1 <span class="badge green" style="background:#00E676; color:black; font-weight:bold;">Atual</span></div>
+        <div class="changelog-item">
+          <div class="changelog-version">v2026.08.09.v3 <span class="badge green" style="background:#00E676; color:black; font-weight:bold;">Atual</span></div>
+          <div class="changelog-date">09 de Agosto de 2026 · 23:15</div>
+          <div class="changelog-tags">
+            <span class="badge blue">BUGFIX</span>
+            <span class="badge purple">PERFORMANCE</span>
+          </div>
+          <ul class="changelog-desc">
+            <li><strong>Estabilidade do Banco de Dados:</strong> Otimização da velocidade de leitura do histórico e correção de erros de memória e travamentos do navegador.</li>
+            <li><strong>Acesso Desenvolvedor:</strong> Correção no reconhecimento automático da conta de desenvolvedor pelo e-mail.</li>
+          </ul>
+        </div>
+        
+        <div class="changelog-item">
+          <div class="changelog-version">v2026.08.08.v1</div>
           <div class="changelog-date">08 de Agosto de 2026 · 16:35</div>
           <div class="changelog-tags">
             <span class="changelog-tag feat">feature</span>
