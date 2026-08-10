@@ -9,7 +9,8 @@
       "Bash(curl -s 'https://ryizqbbjxjrxcortkshv.supabase.co/auth/v1/admin/users?page=1&per_page=50' -H 'apikey: [CHAVE_INVALIDA]' -H 'Authorization: Bearer [CHAVE_INVALIDA]')",
       "Bash(echo \"exit: $?\")",
       "Bash(git log *)",
-      "Bash(git fetch *)"
+      "Bash(git fetch *)",
+      "Bash(grep -iE \"backup|\\\\.json$|\\\\.env\")"
     ]
   },
   "hooks": {
