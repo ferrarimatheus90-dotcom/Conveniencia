@@ -87,7 +87,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       if (idbVendas > currentVendas || !localStorage.getItem('convpro_db')) {
           console.log(`✨ Restaurando banco de dados a partir do IndexedDB (Vendas: IDB ${idbVendas} vs LocalStorage ${currentVendas})`);
           DB = idbData;
-          localStorage.setItem('convpro_db', JSON.stringify(DB));
+          try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
           if (typeof renderDashboard === 'function' && currentPage === 'dashboard') renderDashboard();
           if (typeof renderCaixa === 'function' && currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
       } else {
@@ -332,7 +332,7 @@ async function saveDB(){
   
   // 2. Tenta salvar no localStorage (Fallback para carregamento rápido)
   try {
-    localStorage.setItem('convpro_db', JSON.stringify(DB)); 
+    try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); } 
   } catch (e) {
     console.error('CRITICAL: Failed to save to localStorage', e);
     if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
@@ -578,7 +578,7 @@ function mergeRemoteDB(remote) {
   }
 
   if (hasUpdates) {
-    localStorage.setItem('convpro_db', JSON.stringify(DB));
+    try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
     repairDB();
   } else if (hasMissingInCloud) {
     console.log("⬆️ Novas mesas locais detectadas. Sincronizando com a nuvem...");
@@ -600,7 +600,7 @@ async function loadDBFromCloud() {
       const updated = mergeRemoteDB(res.data.json_db);
       if (updated) {
         console.log("✨ Banco de dados atualizado com informações da nuvem.");
-        localStorage.setItem('convpro_db', JSON.stringify(DB));
+        try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
       }
       return updated;
     }
@@ -732,7 +732,7 @@ async function syncToGoogleSheets() {
     if (data && data.success) {
       console.log("✅ Sincronizado com Google Sheets!");
       DB.config.lastSyncDiario = new Date().toISOString();
-      localStorage.setItem('convpro_db', JSON.stringify(DB));
+      try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
       await sb.from('config_app').upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
     } else {
       console.warn("⚠️ Google Sheets recusou a sincronização:", data?.error || 'Erro desconhecido');
@@ -1238,7 +1238,7 @@ async function finishLogin(user, rem){
           const hasUpdates = mergeRemoteDB(remoteDb);
           if (hasUpdates) {
               console.log("✨ Banco de dados mesclado via Google Sheets (fallback).");
-              localStorage.setItem('convpro_db', JSON.stringify(DB));
+              try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
               if (typeof sb !== 'undefined') {
                  sb.from('config_app').upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
               }
@@ -4598,7 +4598,7 @@ function importarBackup(){
       DB = dbParsed;
       
       // Salva no localStorage local imediatamente para garantir disponibilidade sem depender da nuvem
-      localStorage.setItem('convpro_db', JSON.stringify(DB));
+      try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
       
       auditLog('BACKUP_IMPORT', 'Restauração de backup realizada');
       showToast('✅ Banco de dados restaurado com sucesso!', 'success');
@@ -4845,7 +4845,7 @@ document.getElementById('loginUser').addEventListener('keydown',e=>{if(e.key==='
     }
 
     // 5. Salvar e Marcar como concluído
-    localStorage.setItem('convpro_db', JSON.stringify(currentDB));
+    try { localStorage.setItem('convpro_db', JSON.stringify(currentDB)); } catch(e) { console.warn('LocalStorage full'); }
     localStorage.setItem(MERGE_KEY, 'true');
 
     currentDB.auditoria.push({
@@ -4855,7 +4855,7 @@ document.getElementById('loginUser').addEventListener('keydown',e=>{if(e.key==='
       detalhes: 'Restauração inteligente de dados de 02/04 realizada com sucesso.',
       dt: new Date().toISOString()
     });
-    localStorage.setItem('convpro_db', JSON.stringify(currentDB));
+    try { localStorage.setItem('convpro_db', JSON.stringify(currentDB)); } catch(e) { console.warn('LocalStorage full'); }
 
     console.log("✅ Recuperação concluída! Recarregue a página para ver as mudanças.");
     
