@@ -1,5 +1,7 @@
 // ===================== CONFIGURAÇÃO GERAL E SUPABASE =====================
-const CURRENT_APP_VERSION = 'v2026.08.09.v3';
+const CURRENT_APP_VERSION = 'v2026.08.09.v7'; // Controle de Versão Interno
+
+// URL da Planilha Google (usada pelas funções _gsPost / _gsGet se tiver).
 const SUPABASE_URL = 'https://oalmwbivirqunhsrwzqq.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hbG13Yml2aXJxdW5oc3J3enFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyMDE4NDYsImV4cCI6MjEwMTc3Nzg0Nn0.h2rUUKnzLHo2tBR1QDZYsR9agi9DapYSBFC8bRPJh38';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -575,7 +577,7 @@ function mergeRemoteDB(remote) {
         DB[key].sort((a, b) => {
           const d1 = b.dt || b.data || '';
           const d2 = a.dt || a.data || '';
-          return d1.localeCompare(d2);
+          return String(d1).localeCompare(String(d2));
         });
       }
     }
@@ -601,11 +603,12 @@ function mergeRemoteDB(remote) {
   if (hasUpdates) {
     try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
     repairDB();
-  } else if (hasMissingInCloud) {
-    console.log("⬆️ Novas mesas locais detectadas. Sincronizando com a nuvem...");
+  }
+  if (hasMissingInCloud) {
+    console.log("⬆️ Dados locais ausentes na nuvem detectados. Sincronizando com a nuvem...");
     saveDB();
   }
-  return hasUpdates;
+  return hasUpdates || hasMissingInCloud;
 }
 
 async function loadDBFromCloud() {
@@ -756,8 +759,8 @@ async function syncToGoogleSheets() {
       try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
       await sb.from('config_app').upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
     } else {
-      console.warn("⚠️ Google Sheets recusou a sincronização:", data?.error || 'Erro desconhecido');
-      if (data?.error === 'Não autorizado.') {
+      console.warn("⚠️ Google Sheets recusou a sincronização:", data && data.error ? data.error : 'Erro desconhecido');
+      if (data && data.error === 'Não autorizado.') {
         showToast('Erro: Token do Google Sheets inválido ou não configurado!', 'error');
       }
     }
@@ -769,7 +772,7 @@ async function syncToGoogleSheets() {
 }
 
 window.forceSupabaseSync = async function() {
-  const btn = event?.currentTarget;
+  const btn = (typeof event !== "undefined" && event) ? event.currentTarget : null;
   const originalHtml = btn ? btn.innerHTML : '';
   if (btn) { btn.innerHTML = '⏳ Sinc. Nuvem...'; btn.disabled = true; }
   
