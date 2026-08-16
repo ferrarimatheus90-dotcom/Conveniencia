@@ -350,6 +350,15 @@ async function saveDB(){
 
   // Sincronização com Supabase (Nuvem) com Retentativa Automática
   try {
+    // 1. Busca os dados mais recentes da nuvem ANTES de sobrescrever
+    const { data: cloudData, error: fetchErr } = await sb.from('config_app').select('json_db').eq('id', 1).single();
+    
+    // Se conseguiu buscar sem erro, faz o merge da nuvem para o local silenciosamente
+    if (!fetchErr && cloudData && cloudData.json_db) {
+      mergeRemoteDB(cloudData.json_db, true);
+    }
+
+    // 2. Agora o DB local possui as informações mais novas da nuvem, podemos sobrescrever com segurança
     const { error } = await sb
       .from('config_app') 
       .upsert({ id: 1, json_db: DB, updated_at: new Date().toISOString() });
@@ -454,7 +463,7 @@ function matchMesa(nameA, nameB) {
   return nameA.trim().toLowerCase() === nameB.trim().toLowerCase();
 }
 
-function mergeRemoteDB(remote) {
+function mergeRemoteDB(remote, preventSave = false) {
   if (!remote) return false;
   let hasUpdates = false;
   let hasMissingInCloud = false;
@@ -525,8 +534,8 @@ function mergeRemoteDB(remote) {
       // Se a mesa NÃO está no remoto:
       const lmCreatedTs = lm.dtCriacao ? new Date(lm.dtCriacao).getTime() : 0;
       
-      // Se foi criada localmente DEPOIS do último sync com a nuvem, ela é nova (criada offline)
-      if (lastSyncTs > 0 && lmCreatedTs > lastSyncTs) {
+      // Se nunca sincronizou (lastSyncTs === 0) ou foi criada localmente DEPOIS do último sync com a nuvem, ela é nova (criada offline)
+      if (lastSyncTs === 0 || lmCreatedTs > lastSyncTs) {
         hasMissingInCloud = true;
         return true;
       }
@@ -604,7 +613,7 @@ function mergeRemoteDB(remote) {
     try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
     repairDB();
   }
-  if (hasMissingInCloud) {
+  if (hasMissingInCloud && !preventSave) {
     console.log("⬆️ Dados locais ausentes na nuvem detectados. Sincronizando com a nuvem...");
     saveDB();
   }
@@ -1375,6 +1384,25 @@ async function finishLogin(user, rem){
   navigate('dashboard');
   auditLog('LOGIN','Acesso ao sistema');
   
+  // Sincronização em tempo real entre abas (guias) do navegador
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'convpro_db' && e.newValue) {
+      try {
+        const newDB = JSON.parse(e.newValue);
+        if (newDB && newDB.vendas && newDB.mesas_abertas) {
+          DB = newDB;
+          console.log("🔄 Aba sincronizada em tempo real com alterações de outra guia!");
+          // Atualiza a tela que está aberta no momento
+          if (typeof navigate === 'function' && typeof currentPage !== 'undefined' && currentPage) {
+            navigate(currentPage);
+          }
+        }
+      } catch(err) {
+        console.error("Erro ao sincronizar aba:", err);
+      }
+    }
+  });
+
   // Sincronização ao fechar o navegador
   window.addEventListener('beforeunload', (e) => {
     // Tenta um último sync rápido via Beacon (Sheets)
@@ -2536,8 +2564,27 @@ function abrirModalMesas(filtro = '', secao = 'todos'){
         opacity: 0;
         transition: opacity 0.2s;
       }
-      .mesa-card:hover .btn-delete-mesa { opacity: 1; }
+      .btn-print-mesa {
+        position: absolute;
+        top: 8px;
+        right: 36px;
+        background: rgba(59, 130, 246, 0.1);
+        border: none;
+        color: var(--blue);
+        cursor: pointer;
+        font-size: 14px;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+      .mesa-card:hover .btn-delete-mesa, .mesa-card:hover .btn-print-mesa { opacity: 1; }
       .btn-delete-mesa:hover { background: var(--red); color: white; }
+      .btn-print-mesa:hover { background: var(--blue); color: white; }
 
       .mesa-badge {
         font-size: 10px;
@@ -2607,7 +2654,10 @@ function abrirModalMesas(filtro = '', secao = 'todos'){
                 <span class="mesa-badge" style="background:${alertClass==='danger'?'rgba(239,68,68,0.2)':(alertClass==='warning'?'rgba(245,158,11,0.2)':'rgba(76,175,80,0.2)')}; color:${alertClass==='danger'?'var(--red)':(alertClass==='warning'?'var(--amber)':'#81c784')}">
                   ${timeMsg}
                 </span>
-                <button class="btn-delete-mesa" onclick="event.stopPropagation(); excluirMesaAbertaById(${m.id})">×</button>
+                <div>
+                  <button class="btn-print-mesa" onclick="event.stopPropagation(); imprimirMesaAbertaById(${m.id})" title="Imprimir Mesa">🖨️</button>
+                  <button class="btn-delete-mesa" onclick="event.stopPropagation(); excluirMesaAbertaById(${m.id})" title="Excluir Mesa">×</button>
+                </div>
               </div>
 
               <div class="mesa-name" style="font-weight:bold; font-size:17px; line-height:1.2; color:var(--text1); margin-bottom:12px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
@@ -2728,6 +2778,16 @@ function imprimirComandaParcial(mesa){
     pagamento: 'A PAGAR'
   };
   imprimirCupom(mockupVenda);
+}
+
+// ===================== IMPRESSÃO =====================
+
+function imprimirMesaAbertaById(id) {
+  const mesa = DB.mesas_abertas.find(m => m.id === id);
+  if (mesa) {
+    imprimirComandaParcial(mesa);
+    showToast('Imprimindo mesa...', 'success');
+  }
 }
 
 // ===================== PRODUÇÃO =====================
