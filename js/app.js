@@ -213,6 +213,77 @@ async function saveMesaSafetySnapshot(reason = 'save') {
   }
 }
 
+async function loadLatestMesaSafetySnapshot() {
+  try {
+    const db = await openIDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_NAME, 'readonly');
+      const store = tx.objectStore(IDB_STORE_NAME);
+      const keysReq = store.getAllKeys();
+      keysReq.onsuccess = () => {
+        const keys = keysReq.result
+          .filter(k => String(k).startsWith('mesas_snapshot_'))
+          .sort();
+        const latestKey = keys[keys.length - 1];
+        if (!latestKey) return resolve(null);
+        const snapshotReq = store.get(latestKey);
+        snapshotReq.onsuccess = () => resolve(snapshotReq.result || null);
+        snapshotReq.onerror = () => reject(snapshotReq.error);
+      };
+      keysReq.onerror = () => reject(keysReq.error);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn('Falha ao ler snapshot de segurança das mesas:', e);
+    return null;
+  }
+}
+
+// Restaura somente mesas que sumiram sem um fechamento/exclusão explícito.
+// É executado automaticamente antes de salvar e também pelo botão de socorro.
+async function recoverMissingMesasFromSafetySnapshot({ manual = false, reason = 'automatico' } = {}) {
+  const snapshot = await loadLatestMesaSafetySnapshot();
+  const snapshotMesas = Array.isArray(snapshot?.mesas) ? snapshot.mesas : [];
+  DB.mesas_abertas = Array.isArray(DB.mesas_abertas) ? DB.mesas_abertas : [];
+  DB.mesas_fechadas = Array.isArray(DB.mesas_fechadas) ? DB.mesas_fechadas : [];
+
+  let restored = 0;
+  snapshotMesas.forEach(snapshotMesa => {
+    if (!snapshotMesa?.cliente) return;
+    if (isMesaClosedByTombstone(snapshotMesa, DB.mesas_fechadas)) return;
+    const alreadyExists = DB.mesas_abertas.some(currentMesa =>
+      (snapshotMesa.id != null && String(currentMesa.id) === String(snapshotMesa.id)) ||
+      matchMesa(currentMesa.cliente, snapshotMesa.cliente)
+    );
+    if (!alreadyExists) {
+      DB.mesas_abertas.push(JSON.parse(JSON.stringify(snapshotMesa)));
+      restored++;
+    }
+  });
+
+  if (restored > 0) {
+    repairDB();
+    await saveToIDB(DB);
+    try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
+    console.warn(`[COFRE DE MESAS] ${restored} mesa(s) recuperada(s). Motivo: ${reason}.`);
+  }
+
+  if (manual) {
+    if (restored > 0) {
+      showToast(`🛟 ${restored} mesa(s) recuperada(s) com sucesso!`, 'success');
+      saveDB();
+    } else {
+      showToast('Nenhuma mesa perdida foi encontrada no cofre.', 'info');
+    }
+  }
+  return restored;
+}
+
+window.recuperarMesasDoCofre = async function() {
+  const restored = await recoverMissingMesasFromSafetySnapshot({ manual: true, reason: 'acao_manual' });
+  if (restored > 0) abrirModalMesas();
+};
+
 function autoDownloadBackupDiario() {
   try {
     const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
@@ -411,6 +482,8 @@ function saveDB(){
 }
 
 async function persistDB(){
+  // Se uma mesa sumiu sem tombstone, recupera antes que o vazio seja salvo na nuvem.
+  await recoverMissingMesasFromSafetySnapshot({ reason: 'antes_do_save' });
   await saveMesaSafetySnapshot('antes_do_save');
   repairDB(); // Garante integridade antes de salvar
   
