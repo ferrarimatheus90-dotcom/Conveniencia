@@ -39,8 +39,11 @@ const context = {
   DB: emptyDB(),
   localStorage: { setItem() {} },
   repairDB() {},
+  saveToIDB: async () => true,
   saveDB() {},
+  showToast() {},
   getLocalISODate: () => '2026-08-16T20:00:00.000Z',
+  window: {},
   console: { log() {}, warn() {}, error() {} },
   Date,
   JSON,
@@ -91,4 +94,29 @@ context.mergeRemoteDB({
 }, true);
 assert(context.DB.mesas_abertas.length === 1, 'Uma nova abertura legítima foi bloqueada.');
 
-console.log('OK: 5 cenários críticos de sincronização de mesas passaram.');
+const recoveryStart = appSource.indexOf('async function recoverMissingMesasFromSafetySnapshot');
+const recoveryEnd = appSource.indexOf('window.recuperarMesasDoCofre');
+vm.runInContext(appSource.slice(recoveryStart, recoveryEnd), context);
+
+(async () => {
+  // O cofre recupera automaticamente uma mesa que desapareceu sem fechamento.
+  context.DB = emptyDB([]);
+  context.loadLatestMesaSafetySnapshot = async () => ({ mesas: [mesa()] });
+  let restored = await context.recoverMissingMesasFromSafetySnapshot({ reason: 'teste' });
+  assert(restored === 1 && context.DB.mesas_abertas.length === 1, 'Cofre não recuperou mesa perdida.');
+
+  // O cofre respeita fechamentos legítimos e não ressuscita uma venda concluída.
+  context.DB = emptyDB([]);
+  context.DB.mesas_fechadas = [{
+    id: '10',
+    clienteKey: 'mesa 10',
+    dtFechamento: '2026-08-16T20:00:00.000Z'
+  }];
+  restored = await context.recoverMissingMesasFromSafetySnapshot({ reason: 'teste' });
+  assert(restored === 0 && context.DB.mesas_abertas.length === 0, 'Cofre ressuscitou mesa finalizada.');
+
+  console.log('OK: 7 cenários críticos de sincronização e recuperação passaram.');
+})().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
