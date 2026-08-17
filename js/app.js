@@ -1,5 +1,8 @@
 // ===================== CONFIGURAÇÃO GERAL E SUPABASE =====================
-const CURRENT_APP_VERSION = 'v2026.08.09.v7'; // Controle de Versão Interno
+// O index.html é a fonte oficial da versão. Assim não há uma segunda versão
+// hardcoded no JavaScript capaz de sobrescrever a data publicada no rodapé.
+const CURRENT_APP_VERSION = document.getElementById('appVersionDisplay')?.textContent.trim()
+  || 'v2026.08.16.v2';
 
 // URL da Planilha Google (usada pelas funções _gsPost / _gsGet se tiver).
 const SUPABASE_URL = 'https://oalmwbivirqunhsrwzqq.supabase.co';
@@ -5163,16 +5166,16 @@ window.abrirPainelDev = function() {
       <div class="changelog-timeline">
         
         <div class="changelog-item current">
-        <div class="changelog-item">
-          <div class="changelog-version">v2026.08.09.v3 <span class="badge green" style="background:#00E676; color:black; font-weight:bold;">Atual</span></div>
-          <div class="changelog-date">09 de Agosto de 2026 · 23:15</div>
+          <div class="changelog-version">${CURRENT_APP_VERSION} <span class="badge green" style="background:#00E676; color:black; font-weight:bold;">Atual</span></div>
+          <div class="changelog-date">16 de Agosto de 2026</div>
           <div class="changelog-tags">
             <span class="badge blue">BUGFIX</span>
             <span class="badge purple">PERFORMANCE</span>
           </div>
           <ul class="changelog-desc">
-            <li><strong>Estabilidade do Banco de Dados:</strong> Otimização da velocidade de leitura do histórico e correção de erros de memória e travamentos do navegador.</li>
-            <li><strong>Acesso Desenvolvedor:</strong> Correção no reconhecimento automático da conta de desenvolvedor pelo e-mail.</li>
+            <li><strong>Versão sincronizada:</strong> O rodapé e o painel do desenvolvedor agora usam automaticamente a versão oficial definida no HTML.</li>
+            <li><strong>Sincronização entre abas:</strong> Alterações feitas em outra guia são refletidas em tempo real.</li>
+            <li><strong>Impressão rápida:</strong> Adicionado o botão de impressão nas mesas abertas.</li>
           </ul>
         </div>
         
