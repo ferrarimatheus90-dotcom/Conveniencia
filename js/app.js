@@ -2,7 +2,7 @@
 // O index.html é a fonte oficial da versão. Assim não há uma segunda versão
 // hardcoded no JavaScript capaz de sobrescrever a data publicada no rodapé.
 const CURRENT_APP_VERSION = document.getElementById('appVersionDisplay')?.textContent.trim()
-  || 'v2026.08.16.v2';
+  || 'v2026.08.16.v3';
 
 // URL da Planilha Google (usada pelas funções _gsPost / _gsGet se tiver).
 const SUPABASE_URL = 'https://oalmwbivirqunhsrwzqq.supabase.co';
@@ -86,18 +86,15 @@ window.addEventListener('DOMContentLoaded', async () => {
   try {
     const idbData = await loadFromIDB();
     if (idbData && idbData.vendas) {
-      const currentVendas = DB.vendas ? DB.vendas.length : 0;
-      const idbVendas = idbData.vendas.length;
-      
-      if (idbVendas > currentVendas || !localStorage.getItem('convpro_db')) {
-          console.log(`✨ Restaurando banco de dados a partir do IndexedDB (Vendas: IDB ${idbVendas} vs LocalStorage ${currentVendas})`);
-          DB = idbData;
-          try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
-          if (typeof renderDashboard === 'function' && currentPage === 'dashboard') renderDashboard();
-          if (typeof renderCaixa === 'function' && currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
-      } else {
-         // IDB exists but localStorage has more/equal, ensure IDB is updated
-         saveToIDB(DB);
+      // Nunca escolhe uma cópia inteira apenas pelo número de vendas. Mescla o
+      // cofre com a memória atual para que uma lista vazia não apague mesas.
+      const restored = mergeRemoteDB(idbData, true);
+      try { localStorage.setItem('convpro_db', JSON.stringify(DB)); } catch(e) { console.warn('LocalStorage full'); }
+      await saveToIDB(DB);
+      if (restored) {
+        console.log('✨ Dados de segurança recuperados do IndexedDB.');
+        if (typeof renderDashboard === 'function' && currentPage === 'dashboard') renderDashboard();
+        if (typeof renderCaixa === 'function' && currentPage === 'caixa') document.getElementById('content').innerHTML = renderCaixa();
       }
     } else if (!idbData && DB.vendas) {
       // Migrate existing localstorage DB to IDB
@@ -165,6 +162,54 @@ async function loadFromIDB() {
   } catch (e) {
     console.error('Falha ao ler do IndexedDB', e);
     return null;
+  }
+}
+
+// Mantém cópias pequenas e independentes das comandas abertas. Esses snapshots
+// não substituem o banco principal e existem para recuperação em caso de uma
+// resposta remota vazia, corrida entre abas ou falha durante a sincronização.
+async function saveMesaSafetySnapshot(reason = 'save') {
+  const mesas = Array.isArray(DB?.mesas_abertas) ? DB.mesas_abertas : [];
+  if (mesas.length === 0) return false; // nunca sobrescreve a última cópia útil com vazio
+
+  try {
+    const db = await openIDB();
+    const createdAt = new Date().toISOString();
+    const key = `mesas_snapshot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const snapshot = {
+      createdAt,
+      reason,
+      mesas: JSON.parse(JSON.stringify(mesas))
+    };
+
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(IDB_STORE_NAME);
+      store.put(snapshot, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+
+    // Conserva os 30 snapshots mais recentes para não crescer indefinidamente.
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(IDB_STORE_NAME);
+      const req = store.getAllKeys();
+      req.onsuccess = () => {
+        const keys = req.result
+          .filter(k => String(k).startsWith('mesas_snapshot_'))
+          .sort();
+        keys.slice(0, Math.max(0, keys.length - 30)).forEach(oldKey => store.delete(oldKey));
+      };
+      req.onerror = () => reject(req.error);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+    return true;
+  } catch (e) {
+    console.warn('Falha ao criar snapshot de segurança das mesas:', e);
+    return false;
   }
 }
 
@@ -293,6 +338,8 @@ let DB = (() => {
   consumos: [],
   caixas: [],
   auditoria: [],
+  mesas_abertas: [],
+  mesas_fechadas: [],
   config: { lastSyncDiario: null, lastBackupSync: null },
   nextId: {produto:100,venda:1,compra:1,producao:1,consumo:1,caixa:1}
 };
@@ -300,6 +347,9 @@ let DB = (() => {
 let currentUser = null;
 let syncPending = false;
 let retrySyncTimeout = null;
+let saveLoopPromise = null;
+let saveRequested = false;
+let googleSheetsSaveTimer = null;
 let currentPage = 'dashboard';
 const _GOOGLE_SHEETS_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbw2-zau41VnCdOV0-HxcmDOeQSaSlciv4Cs8dOnxCkrP2MWTJYNXoHVtDVL9vEgo_wkGw/exec';
 function _isAllowedGSUrl(url) {
@@ -329,7 +379,39 @@ function _gsPost(payload) {
   });
 }
 
-async function saveDB(){
+function scheduleGoogleSheetsSave() {
+  if (!GOOGLE_SHEETS_URL) return;
+  clearTimeout(googleSheetsSaveTimer);
+  googleSheetsSaveTimer = setTimeout(() => {
+    googleSheetsSaveTimer = null;
+    if (!window._isSyncingGS) syncToGoogleSheets();
+  }, 5000);
+}
+
+// Agrupa chamadas simultâneas em uma fila única. Antes, auditLog() e a ação
+// principal podiam iniciar vários downloads/uploads de 10+ MB fora de ordem.
+function saveDB(){
+  saveRequested = true;
+  if (!saveLoopPromise) {
+    saveLoopPromise = (async () => {
+      while (saveRequested) {
+        saveRequested = false;
+        await persistDB();
+      }
+    })().catch(e => {
+      console.error('Falha inesperada na fila de salvamento:', e);
+      syncPending = true;
+      updateCloudIcon('error', e.message || 'Falha ao salvar');
+    }).finally(() => {
+      saveLoopPromise = null;
+      if (saveRequested) saveDB();
+    });
+  }
+  return saveLoopPromise;
+}
+
+async function persistDB(){
+  await saveMesaSafetySnapshot('antes_do_save');
   repairDB(); // Garante integridade antes de salvar
   
   // 1. Salva primariamente no cofre blindado do navegador (IndexedDB)
@@ -392,10 +474,8 @@ async function saveDB(){
     updateCloudIcon('error', "Sincronização pendente...");
   }
 
-  // Só dispara o sync do Google Sheets se não houver um em andamento
-  if (!window._isSyncingGS) {
-    syncToGoogleSheets();
-  }
+  // Consolida várias alterações próximas em um único envio pesado à Planilha.
+  scheduleGoogleSheetsSave();
 
   // Backup automático diário no Google Drive (se ainda não tiver sido feito hoje)
   if (GOOGLE_SHEETS_URL) {
@@ -466,14 +546,58 @@ function matchMesa(nameA, nameB) {
   return nameA.trim().toLowerCase() === nameB.trim().toLowerCase();
 }
 
+function mesaTombstoneKey(value) {
+  const id = value?.id != null ? String(value.id) : '';
+  const name = normalizeMesaKey(value?.cliente || value?.clienteKey || '');
+  return id ? `id:${id}` : (name ? `name:${name}` : '');
+}
+
+function tombstoneDate(value) {
+  const ts = new Date(value?.dtFechamento || value?.deletedAt || 0).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function mesaDate(value) {
+  const ts = new Date(value?.dtAtualizacao || value?.dtCriacao || 0).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function isMesaClosedByTombstone(mesa, tombstones = DB.mesas_fechadas || []) {
+  const idKey = mesa?.id != null ? `id:${String(mesa.id)}` : '';
+  const nameKey = normalizeMesaKey(mesa?.cliente || '');
+  const closedAt = tombstones.reduce((latest, tombstone) => {
+    const sameId = idKey && mesaTombstoneKey(tombstone) === idKey;
+    const sameName = nameKey && normalizeMesaKey(tombstone?.clienteKey || tombstone?.cliente || '') === nameKey;
+    return (sameId || sameName) ? Math.max(latest, tombstoneDate(tombstone)) : latest;
+  }, 0);
+  return closedAt > 0 && closedAt >= mesaDate(mesa);
+}
+
+function registerMesaFechada(mesa, motivo = 'fechada') {
+  if (!mesa) return;
+  DB.mesas_fechadas = Array.isArray(DB.mesas_fechadas) ? DB.mesas_fechadas : [];
+  const tombstone = {
+    id: mesa.id != null ? String(mesa.id) : null,
+    clienteKey: normalizeMesaKey(mesa.cliente || ''),
+    dtFechamento: getLocalISODate(),
+    motivo
+  };
+  const key = mesaTombstoneKey(tombstone);
+  DB.mesas_fechadas = DB.mesas_fechadas.filter(existing => mesaTombstoneKey(existing) !== key);
+  DB.mesas_fechadas.push(tombstone);
+  DB.mesas_fechadas = DB.mesas_fechadas
+    .sort((a, b) => tombstoneDate(b) - tombstoneDate(a))
+    .slice(0, 1000);
+}
+
 function mergeRemoteDB(remote, preventSave = false) {
   if (!remote) return false;
   let hasUpdates = false;
   let hasMissingInCloud = false;
   console.log("🛠️ Iniciando Smart Merge de dados remotos...");
 
-  // Timestamp do último sync com a nuvem registrado no cliente
-  const lastSyncTs = DB.config?.lastCloudSyncTimestamp ? new Date(DB.config.lastCloudSyncTimestamp).getTime() : 0;
+  DB.mesas_abertas = Array.isArray(DB.mesas_abertas) ? DB.mesas_abertas : [];
+  DB.mesas_fechadas = Array.isArray(DB.mesas_fechadas) ? DB.mesas_fechadas : [];
 
   // 1. Produtos: Adiciona novos, mas mantém estoque local de existentes
   if (remote.produtos && Array.isArray(remote.produtos)) {
@@ -488,7 +612,32 @@ function mergeRemoteDB(remote, preventSave = false) {
     if (DB.produtos.length > remote.produtos.length) hasMissingInCloud = true;
   }
 
-  // 2. Mesas Abertas: Sincronização bidirecional precisa
+  // 2. Fechamentos explícitos: somente um tombstone pode remover uma mesa.
+  // A ausência em uma resposta remota nunca mais é interpretada como exclusão.
+  const tombstoneMap = new Map();
+  [...DB.mesas_fechadas, ...(Array.isArray(remote.mesas_fechadas) ? remote.mesas_fechadas : [])]
+    .forEach(tombstone => {
+      const key = mesaTombstoneKey(tombstone);
+      if (!key) return;
+      const current = tombstoneMap.get(key);
+      if (!current || tombstoneDate(tombstone) > tombstoneDate(current)) {
+        tombstoneMap.set(key, tombstone);
+      }
+    });
+  const mergedTombstones = [...tombstoneMap.values()]
+    .sort((a, b) => tombstoneDate(b) - tombstoneDate(a))
+    .slice(0, 1000);
+  if (mergedTombstones.length !== DB.mesas_fechadas.length ||
+      mergedTombstones.some((t, i) => tombstoneDate(t) !== tombstoneDate(DB.mesas_fechadas[i]))) {
+    DB.mesas_fechadas = mergedTombstones;
+    hasUpdates = true;
+  }
+
+  const beforeTombstones = DB.mesas_abertas.length;
+  DB.mesas_abertas = DB.mesas_abertas.filter(mesa => !isMesaClosedByTombstone(mesa, mergedTombstones));
+  if (DB.mesas_abertas.length !== beforeTombstones) hasUpdates = true;
+
+  // 3. Mesas abertas: merge conservador, sem exclusão por ausência.
   if (remote.mesas_abertas && Array.isArray(remote.mesas_abertas)) {
     const remoteMesaIds = new Set(remote.mesas_abertas.map(m => String(m.id)));
     const remoteMesaNames = new Set(remote.mesas_abertas.map(m => normalizeMesaKey(m.cliente)));
@@ -496,6 +645,7 @@ function mergeRemoteDB(remote, preventSave = false) {
     // A) Processa mesas remotas (adiciona ou atualiza local)
     remote.mesas_abertas.forEach(rm => {
       if (!rm || !rm.cliente) return;
+      if (isMesaClosedByTombstone(rm, mergedTombstones)) return;
       
       const localM = DB.mesas_abertas.find(lm => 
         (rm.id && String(lm.id) === String(rm.id)) || 
@@ -504,8 +654,9 @@ function mergeRemoteDB(remote, preventSave = false) {
 
       if (!localM) {
         // Mesa aberta na nuvem que ainda não temos localmente
-        if (!rm.id) rm.id = Date.now() + Math.floor(Math.random() * 10000);
-        DB.mesas_abertas.push(rm);
+        const recovered = JSON.parse(JSON.stringify(rm));
+        if (!recovered.id) recovered.id = Date.now() + Math.floor(Math.random() * 10000);
+        DB.mesas_abertas.push(recovered);
         hasUpdates = true;
         console.log(`[Smart Merge] Mesa aberta recuperada da nuvem: ${rm.cliente}`);
       } else {
@@ -516,7 +667,18 @@ function mergeRemoteDB(remote, preventSave = false) {
         const dtLocal = localM.dtAtualizacao ? new Date(localM.dtAtualizacao).getTime() : 0;
 
         if (dtRemote > dtLocal) {
-          localM.itens = rm.itens || [];
+          const remoteItems = Array.isArray(rm.itens) ? rm.itens : [];
+          const localItems = Array.isArray(localM.itens) ? localM.itens : [];
+
+          // Uma lista vazia nunca pode zerar uma comanda que ainda possui itens.
+          // Fechamentos legítimos são propagados exclusivamente por tombstones.
+          if (remoteItems.length === 0 && localItems.length > 0) {
+            hasMissingInCloud = true;
+            console.warn(`[Smart Merge] Snapshot vazio ignorado para a mesa "${localM.cliente}".`);
+            return;
+          }
+
+          localM.itens = JSON.parse(JSON.stringify(remoteItems));
           localM.obs = rm.obs || '';
           localM.canal = rm.canal || localM.canal || 'Mesa';
           localM.dtAtualizacao = rm.dtAtualizacao;
@@ -525,40 +687,20 @@ function mergeRemoteDB(remote, preventSave = false) {
       }
     });
 
-    // B) Remove mesas locais que foram FECHADAS ou EXCLUÍDAS em outro dispositivo
-    const initialLen = DB.mesas_abertas.length;
-    DB.mesas_abertas = DB.mesas_abertas.filter(lm => {
-      if (!lm || !lm.cliente) return false;
+    // Mesas locais ausentes no snapshot remoto permanecem abertas e serão
+    // reenviadas. Isso protege contra respostas vazias e terminais atrasados.
+    if (DB.mesas_abertas.some(lm => {
       const inRemoteById = lm.id && remoteMesaIds.has(String(lm.id));
       const inRemoteByName = remoteMesaNames.has(normalizeMesaKey(lm.cliente));
-
-      if (inRemoteById || inRemoteByName) return true;
-
-      // Se a mesa NÃO está no remoto:
-      const lmCreatedTs = lm.dtCriacao ? new Date(lm.dtCriacao).getTime() : 0;
-      
-      // Se nunca sincronizou (lastSyncTs === 0) ou foi criada localmente DEPOIS do último sync com a nuvem, ela é nova (criada offline)
-      if (lastSyncTs === 0 || lmCreatedTs > lastSyncTs) {
-        hasMissingInCloud = true;
-        return true;
-      }
-
-      // Se já existia antes do último sync e agora sumiu da nuvem, foi FECHADA ou DELETADA!
-      console.warn(`[Smart Merge] Mesa "${lm.cliente}" foi fechada/excluída em outro terminal. Removendo localmente.`);
-      hasUpdates = true;
-      return false;
-    });
-
-    if (DB.mesas_abertas.length < initialLen) {
-      hasUpdates = true;
-    }
+      return !inRemoteById && !inRemoteByName;
+    })) hasMissingInCloud = true;
   }
 
   // Registra timestamp do sync bem-sucedido
   if (!DB.config) DB.config = {};
   DB.config.lastCloudSyncTimestamp = new Date().toISOString();
 
-  // 3. Vendas e Histórico: Adiciona o que não existe localmente
+  // 4. Vendas e Histórico: Adiciona o que não existe localmente
   ['vendas', 'compras', 'producoes', 'consumos', 'auditoria'].forEach(key => {
     if (remote[key] && Array.isArray(remote[key])) {
       const localItems = DB[key];
@@ -691,8 +833,6 @@ function repairDB() {
     const map = new Map();
     const cleanList = [];
     let deduplicatedCount = 0;
-    const now = Date.now();
-    const maxAgeMs = 3 * 24 * 60 * 60 * 1000; // 3 dias em ms
 
     DB.mesas_abertas.forEach(m => {
       if (!m || !m.cliente) return;
@@ -700,13 +840,6 @@ function repairDB() {
       if (!m.dtCriacao) m.dtCriacao = getLocalISODate();
       if (!m.dtAtualizacao) m.dtAtualizacao = m.dtCriacao;
       if (!m.itens || !Array.isArray(m.itens)) m.itens = [];
-
-      // Descarta mesas zumbi com mais de 3 dias sem atualização
-      const mDate = new Date(m.dtAtualizacao || m.dtCriacao).getTime();
-      if (now - mDate > maxAgeMs) {
-        console.warn(`[REPARO] Mesa antiga/zumbi "${m.cliente}" criada em ${m.dtCriacao} foi descartada por ter mais de 3 dias.`);
-        return;
-      }
 
       const key = normalizeMesaKey(m.cliente) || m.cliente.trim().toLowerCase();
       if (!map.has(key)) {
@@ -751,6 +884,9 @@ function repairDB() {
   if (!DB.pedidos_processados || !Array.isArray(DB.pedidos_processados)) {
     DB.pedidos_processados = [];
   }
+
+  if (!DB.mesas_abertas || !Array.isArray(DB.mesas_abertas)) DB.mesas_abertas = [];
+  if (!DB.mesas_fechadas || !Array.isArray(DB.mesas_fechadas)) DB.mesas_fechadas = [];
 
   // Garantir objeto de config
   if (!DB.config) DB.config = { lastSyncDiario: null, lastBackupSync: null };
@@ -1388,16 +1524,20 @@ async function finishLogin(user, rem){
   auditLog('LOGIN','Acesso ao sistema');
   
   // Sincronização em tempo real entre abas (guias) do navegador
-  window.addEventListener('storage', (e) => {
+  window.addEventListener('storage', async (e) => {
     if (e.key === 'convpro_db' && e.newValue) {
       try {
         const newDB = JSON.parse(e.newValue);
         if (newDB && newDB.vendas && newDB.mesas_abertas) {
-          DB = newDB;
-          console.log("🔄 Aba sincronizada em tempo real com alterações de outra guia!");
-          // Atualiza a tela que está aberta no momento
-          if (typeof navigate === 'function' && typeof currentPage !== 'undefined' && currentPage) {
-            navigate(currentPage);
+          await saveMesaSafetySnapshot('antes_do_merge_entre_abas');
+          const merged = mergeRemoteDB(newDB, true);
+          await saveToIDB(DB);
+          if (merged) {
+            console.log("🔄 Aba sincronizada por merge seguro com alterações de outra guia!");
+            // Atualiza a tela que está aberta no momento
+            if (typeof navigate === 'function' && typeof currentPage !== 'undefined' && currentPage) {
+              navigate(currentPage);
+            }
           }
         }
       } catch(err) {
@@ -2389,6 +2529,9 @@ function finalizarVenda(OverridePag, mistoJson){
   const clienteFinalizado = cliente.trim();
   if(clienteFinalizado){
      DB.mesas_abertas = DB.mesas_abertas || [];
+     DB.mesas_abertas
+       .filter(x => matchMesa(x.cliente, clienteFinalizado))
+       .forEach(mesa => registerMesaFechada(mesa, 'venda_finalizada'));
      DB.mesas_abertas = DB.mesas_abertas.filter(x => !matchMesa(x.cliente, clienteFinalizado));
   }
 
@@ -2754,6 +2897,7 @@ function excluirMesaAbertaById(id){
   if(!m) return;
   if(!confirm(`Deseja excluir permanentemente a conta de "${m.cliente}"?`)) return;
   
+  registerMesaFechada(m, 'exclusao_manual');
   DB.mesas_abertas = DB.mesas_abertas.filter(x => x.id != id);
   auditLog('MESA_DELETE', `Mesa excluída: ${m.cliente}`);
   saveDB();
@@ -5173,9 +5317,10 @@ window.abrirPainelDev = function() {
             <span class="badge purple">PERFORMANCE</span>
           </div>
           <ul class="changelog-desc">
-            <li><strong>Versão sincronizada:</strong> O rodapé e o painel do desenvolvedor agora usam automaticamente a versão oficial definida no HTML.</li>
-            <li><strong>Sincronização entre abas:</strong> Alterações feitas em outra guia são refletidas em tempo real.</li>
-            <li><strong>Impressão rápida:</strong> Adicionado o botão de impressão nas mesas abertas.</li>
+            <li><strong>Proteção das comandas:</strong> Snapshots vazios ou atrasados não podem mais apagar mesas abertas nem zerar seus itens.</li>
+            <li><strong>Fechamento explícito:</strong> Mesas só são removidas de outros terminais após uma venda finalizada ou exclusão confirmada.</li>
+            <li><strong>Recuperação local:</strong> O sistema mantém até 30 snapshots independentes das mesas no IndexedDB.</li>
+            <li><strong>Sincronização estável:</strong> Salvamentos simultâneos são serializados e alterações de várias abas são mescladas com segurança.</li>
           </ul>
         </div>
         
