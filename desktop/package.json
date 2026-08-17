@@ -1,0 +1,55 @@
+{
+  "name": "conveniencia-oliveira-desktop",
+  "productName": "Conveniência Oliveira",
+  "version": "1.0.0",
+  "description": "Sistema de Gestão Comercial - Conveniência Oliveira (versão desktop com atualização automática via GitHub)",
+  "main": "main.js",
+  "author": "Conveniência Oliveira",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64",
+    "pack": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.conveniencia.oliveira",
+    "productName": "Conveniencia Oliveira",
+    "artifactName": "Conveniencia-Oliveira-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash.html",
+      "src/**/*",
+      "config.json"
+    ],
+    "extraResources": [
+      { "from": "../index.html", "to": "webapp/index.html" },
+      { "from": "../cardapio.html", "to": "webapp/cardapio.html" },
+      { "from": "../css", "to": "webapp/css" },
+      { "from": "../js", "to": "webapp/js" },
+      { "from": "../img", "to": "webapp/img" }
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Conveniência Oliveira",
+      "installerLanguages": ["pt_BR"],
+      "language": "1046"
+    }
+  }
+}
