@@ -1,0 +1,17 @@
+{
+  "github": {
+    "owner": "ferrarimatheus90-dotcom",
+    "repo": "oliveiraconv",
+    "branch": "main"
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 47821
+  },
+  "update": {
+    "checkOnStartup": true,
+    "intervalMinutes": 30,
+    "paths": ["index.html", "cardapio.html", "css/", "js/", "img/"],
+    "maxFileSizeMB": 25
+  }
+}
