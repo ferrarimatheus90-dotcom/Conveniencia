@@ -34,7 +34,11 @@ function createSplash() {
     center: true,
     show: true,
     backgroundColor: '#12151c',
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      preload: path.join(__dirname, 'src', 'splash-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
   });
   splashWindow.loadFile(path.join(__dirname, 'splash.html'));
   return splashWindow;
