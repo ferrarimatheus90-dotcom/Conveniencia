@@ -2,7 +2,7 @@
 // O index.html é a fonte oficial da versão. Assim não há uma segunda versão
 // hardcoded no JavaScript capaz de sobrescrever a data publicada no rodapé.
 const CURRENT_APP_VERSION = document.getElementById('appVersionDisplay')?.textContent.trim()
-  || 'v2026.08.16.v3';
+  || 'v2026.08.16.v4';
 
 // URL da Planilha Google (usada pelas funções _gsPost / _gsGet se tiver).
 const SUPABASE_URL = 'https://oalmwbivirqunhsrwzqq.supabase.co';
@@ -99,6 +99,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     } else if (!idbData && DB.vendas) {
       // Migrate existing localstorage DB to IDB
       saveToIDB(DB);
+    }
+    const safetyRecovered = await recoverMissingMesasFromSafetySnapshot({ reason: 'inicializacao' });
+    if (safetyRecovered > 0) {
+      console.warn(`🛟 ${safetyRecovered} mesa(s) recuperada(s) automaticamente na inicialização.`);
     }
   } catch(e) {
     console.error("Erro na inicialização do IndexedDB", e);
@@ -2944,7 +2948,10 @@ function abrirModalMesas(filtro = '', secao = 'todos'){
       <div class="text-muted" style="font-size:11px">
         Dica: Clique em uma mesa para carregá-la no carrinho.
       </div>
-      <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-ghost" onclick="recuperarMesasDoCofre()" title="Recuperar mesas que desapareceram sem serem finalizadas">🛟 Recuperar mesas</button>
+        <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+      </div>
     </div>
   `;
   
@@ -5392,7 +5399,8 @@ window.abrirPainelDev = function() {
           <ul class="changelog-desc">
             <li><strong>Proteção das comandas:</strong> Snapshots vazios ou atrasados não podem mais apagar mesas abertas nem zerar seus itens.</li>
             <li><strong>Fechamento explícito:</strong> Mesas só são removidas de outros terminais após uma venda finalizada ou exclusão confirmada.</li>
-            <li><strong>Recuperação local:</strong> O sistema mantém até 30 snapshots independentes das mesas no IndexedDB.</li>
+            <li><strong>Recuperação automática:</strong> Antes de salvar, o sistema restaura mesas que desapareceram sem terem sido finalizadas.</li>
+            <li><strong>Botão de socorro:</strong> A tela de mesas possui a ação “Recuperar mesas” para restauração imediata pelo caixa.</li>
             <li><strong>Sincronização estável:</strong> Salvamentos simultâneos são serializados e alterações de várias abas são mescladas com segurança.</li>
           </ul>
         </div>
